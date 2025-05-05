@@ -1,0 +1,13 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+app.build/
+app.dist/
+app.onefile-build/
+
+# Virtual environments
+.venv
+.python-version
+
+# Distribution files
+justdd
