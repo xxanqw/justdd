@@ -6,19 +6,17 @@ pkgdesc="JustDD - Simple graphical USB image writer for Linux and Windows ISOs"
 arch=('any')
 url="https://github.com/xxanqw/justdd"
 license=('GPL3')
-depends=('python' 'python-uv' 'ntfs-3g' 'xdg-utils')
-makedepends=('git')
+depends=('ntfs-3g' 'dosfstools' 'rsync' 'polkit')
+makedepends=('git' 'python' 'python-uv')
 source=("$pkgname::git+$url.git")
 md5sums=('SKIP')
+options=('!debug')
 
 build() {
-    cd "$srcdir/$pkgname"
     uv venv
     source ./.venv/bin/activate
     uv sync --all-extras
-    uv run nuitka --onefile --standalone --enable-plugin=pyside6 \
-        --include-data-file=images/icon.png=images/icon.png \
-        -o justdd app.py
+    uv run pyinstaller --onefile --add-data "images/icon.png:images" --name justdd app.py && mv dist/justdd ./
 }
 
 package() {
@@ -38,4 +36,18 @@ Terminal=false
 Type=Application
 Categories=Utility;System;
 EOF
+}
+
+post_install() {
+    echo -e "\e[31m----------------------------------------------------------------------\e[0m"
+    echo -e "\e[31mNOTE: JustDD uses polkit for privilege escalation.\e[0m"
+    echo -e "\e[31mIf polkit is not enabled by default in your distribution, you may\e[0m"
+    echo -e "\e[31mneed to start and enable the polkit service (polkit.service).\e[0m"
+    echo -e "\e[31mFor example, with systemd, you can do this by running:\e[0m"
+    echo -e "\e[31m  sudo systemctl enable --now polkit.service\e[0m"
+    echo -e "\e[31m----------------------------------------------------------------------\e[0m"
+}
+
+post_upgrade() {
+    post_install
 }

@@ -1,9 +1,16 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+
+# Build files
 app.build/
 app.dist/
 app.onefile-build/
+justdd.spec
+build/
+dist/
+pkg/
+src/
 
 # Virtual environments
 .venv
@@ -11,3 +18,4 @@ app.onefile-build/
 
 # Distribution files
 justdd
+justdd-0.1.0-1-any.pkg.tar.zst
