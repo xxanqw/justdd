@@ -87,7 +87,7 @@ uv sync --all-extras
 
 ### Build the executable:
 ```bash
-uv run nuitka --onefile --standalone --enable-plugin=pyside6 --include-data-file=images/icon.png=images/icon.png -o justdd app.py
+uv run pyinstaller --onefile --add-data "images/icon.png:images" --name justdd app.py && mv dist/justdd ./
 ```
 
 This creates a single executable file that includes all dependencies and can be distributed without requiring Python installation.

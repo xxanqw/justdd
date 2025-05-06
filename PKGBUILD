@@ -4,10 +4,10 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="JustDD - Simple graphical USB image writer for Linux and Windows ISOs"
 arch=('any')
-url="https://github.com/xxanqw/justdd"
+url="https://github.com/xxanqw/justdd/tree/fixing-pkgbuild"
 license=('GPL3')
-depends=('python' 'python-uv' 'ntfs-3g' 'xdg-utils')
-makedepends=('git')
+depends=('ntfs-3g' 'dosfstools' 'rsync' 'polkit')
+makedepends=('git' 'python' 'python-uv')
 source=("$pkgname::git+$url.git")
 md5sums=('SKIP')
 
@@ -16,9 +16,7 @@ build() {
     uv venv
     source ./.venv/bin/activate
     uv sync --all-extras
-    uv run nuitka --onefile --standalone --enable-plugin=pyside6 \
-        --include-data-file=images/icon.png=images/icon.png \
-        -o justdd app.py
+    uv run pyinstaller --onefile --add-data "images/icon.png:images" --name justdd app.py && mv dist/justdd ./
 }
 
 package() {

@@ -10,5 +10,5 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "nuitka"
+    "pyinstaller"
 ]

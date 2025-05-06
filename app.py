@@ -228,7 +228,18 @@ class WindowsWorker(QThread):
         self.steps = steps
     def run(self):
         script_lines = [
-            'set -e'
+            'set -e',
+            # Unmount and clean up any previous mounts or folders
+            'for mnt in /mnt/justdd_iso /mnt/justdd_vfat /mnt/justdd_ntfs; do',
+            '  if mountpoint -q "$mnt"; then',
+            '    umount "$mnt" || true',
+            '  fi',
+            '  rm -rf "$mnt"',
+            'done',
+            # Check if ISO is already mounted at /mnt/justdd_iso
+            'if mount | grep -q "/mnt/justdd_iso"; then',
+            '  umount /mnt/justdd_iso || true',
+            'fi',
         ]
         for idx, (desc, cmd) in enumerate(self.steps, 1):
             script_lines.append(f'echo "Step {idx}/{len(self.steps)}: {desc}"')
@@ -261,7 +272,7 @@ class DDApp(QWidget):
         super().__init__()
         # Enable floating behavior in tiling window managers by making this a dialog that stays on top
         flags = self.windowFlags()
-        flags |= Qt.WindowType.Dialog | Qt.WindowStaysOnTopHint
+        flags |= Qt.WindowType.Dialog | Qt.WindowStaysOnTopHint | Qt.WindowType.X11BypassWindowManagerHint
         self.setWindowFlags(flags)
         # Initialize attributes before any method calls
         self.iso_path = ""
@@ -739,12 +750,12 @@ class DDApp(QWidget):
             ("copy boot.wim", ["cp", f"{iso_mount}/sources/boot.wim", f"{vfat_mount}/sources/"]),
             ("mkdir NTFS", ["mkdir", "-p", ntfs_mount]),
             ("mount INSTALL", ["mount", p2, ntfs_mount]),
-            ("rsync to INSTALL (This is a VERY LONG process (also output can be broken))", ["rsync", "-r", "--info=progress2", "--no-perms", "--no-owner", "--no-group", f"{iso_mount}/", f"{ntfs_mount}/"]),
-            ("umount INSTALL (this step is even longer then previous, just give it a time)", ["umount", ntfs_mount]),
+            ("rsync to INSTALL (this is a VERY LONG process, output can be broken)", ["rsync", "-r", "--info=progress2", "--no-perms", "--no-owner", "--no-group", f"{iso_mount}/", f"{ntfs_mount}/"]),
+            ("umount INSTALL (this step is even longer than previous, just give it time)", ["umount", ntfs_mount]),
             ("umount BOOT", ["umount", vfat_mount]),
             ("umount ISO", ["umount", iso_mount]),
             ("sync buffers", ["sync"]),
-            ("remove dirs (if it fails do it yourself)", ["rmdir", iso_mount, vfat_mount, ntfs_mount]),
+            ("remove dirs (if it fails, do it yourself)", ["rmdir", iso_mount, vfat_mount, ntfs_mount]),
         ]
         self.windows_worker = WindowsWorker(steps)
         self.windows_worker.progress.connect(self.status_output_win.append)
@@ -963,6 +974,7 @@ class DDApp(QWidget):
 
 
 if __name__ == "__main__":
+    os.environ["QT_LOGGING_RULES"] = "qt.qpa.wayland.textinput=false"
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     # Set window icon for both X11 and Wayland
