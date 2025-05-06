@@ -223,35 +223,44 @@ class SyncWidget(QWidget):
 class WindowsWorker(QThread):
     progress = Signal(str)
     finished = Signal(bool)
+
     def __init__(self, steps, parent=None):
         super().__init__(parent)
         self.steps = steps
+
     def run(self):
         script_lines = [
-            'set -e',
+            "set -e",
             # Unmount and clean up any previous mounts or folders
-            'for mnt in /mnt/justdd_iso /mnt/justdd_vfat /mnt/justdd_ntfs; do',
+            "for mnt in /mnt/justdd_iso /mnt/justdd_vfat /mnt/justdd_ntfs; do",
             '  if mountpoint -q "$mnt"; then',
             '    umount "$mnt" || true',
-            '  fi',
+            "  fi",
             '  rm -rf "$mnt"',
-            'done',
+            "done",
             # Check if ISO is already mounted at /mnt/justdd_iso
             'if mount | grep -q "/mnt/justdd_iso"; then',
-            '  umount /mnt/justdd_iso || true',
-            'fi',
+            "  umount /mnt/justdd_iso || true",
+            "fi",
         ]
         for idx, (desc, cmd) in enumerate(self.steps, 1):
             script_lines.append(f'echo "Step {idx}/{len(self.steps)}: {desc}"')
             script_lines.append(f'echo "Running: {" ".join(cmd)}"')
-            script_lines.append(' '.join(f'"{c}"' if ' ' in c or c.startswith('-') else c for c in cmd))
+            script_lines.append(
+                " ".join(f'"{c}"' if " " in c or c.startswith("-") else c for c in cmd)
+            )
         script_content = "\n".join(script_lines)
         with tempfile.NamedTemporaryFile("w", delete=False, suffix=".sh") as tf:
             tf.write(script_content)
             script_path = tf.name
         try:
             os.chmod(script_path, 0o700)
-            proc = subprocess.Popen(["pkexec", "bash", script_path], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            proc = subprocess.Popen(
+                ["pkexec", "bash", script_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
             for line in proc.stdout:
                 self.progress.emit(line.rstrip())
             proc.wait()
@@ -272,7 +281,11 @@ class DDApp(QWidget):
         super().__init__()
         # Enable floating behavior in tiling window managers by making this a dialog that stays on top
         flags = self.windowFlags()
-        flags |= Qt.WindowType.Dialog | Qt.WindowStaysOnTopHint | Qt.WindowType.X11BypassWindowManagerHint
+        flags |= (
+            Qt.WindowType.Dialog
+            | Qt.WindowStaysOnTopHint
+            | Qt.WindowType.X11BypassWindowManagerHint
+        )
         self.setWindowFlags(flags)
         # Initialize attributes before any method calls
         self.iso_path = ""
@@ -723,7 +736,7 @@ class DDApp(QWidget):
         self.status_output_win.clear()
         self._set_windows_ui_enabled(False)
         tab_widget = self.findChild(QTabWidget)
-        if (tab_widget):
+        if tab_widget:
             tab_widget.tabBar().setEnabled(False)
         self.findChild(QTabWidget).setEnabled(False)
         # Disable all tabs while writing
@@ -737,25 +750,75 @@ class DDApp(QWidget):
         steps = [
             ("Wipefs", ["wipefs", "-a", drive]),
             ("Parted mklabel", ["parted", "--script", drive, "mklabel", "gpt"]),
-            ("Parted mkpart BOOT", ["parted", "--script", drive, "mkpart", "BOOT", "fat32", "0%", "1GiB"]),
-            ("Parted mkpart INSTALL", ["parted", "--script", drive, "mkpart", "INSTALL", "ntfs", "1GiB", "100%"]),
+            (
+                "Parted mkpart BOOT",
+                ["parted", "--script", drive, "mkpart", "BOOT", "fat32", "0%", "1GiB"],
+            ),
+            (
+                "Parted mkpart INSTALL",
+                [
+                    "parted",
+                    "--script",
+                    drive,
+                    "mkpart",
+                    "INSTALL",
+                    "ntfs",
+                    "1GiB",
+                    "100%",
+                ],
+            ),
             ("mkfs.vfat", ["mkfs.vfat", "-n", "BOOT", p1]),
             ("mkfs.ntfs", ["mkfs.ntfs", "--quick", "-L", "INSTALL", p2]),
             ("mkdir ISO mount", ["mkdir", "-p", iso_mount]),
             ("mount ISO", ["mount", "-o", "loop", self.iso_path_win, iso_mount]),
             ("mkdir VFAT", ["mkdir", "-p", vfat_mount]),
             ("mount BOOT", ["mount", p1, vfat_mount]),
-            ("rsync to BOOT", ["rsync", "-r", "--info=progress2", "--no-perms", "--no-owner", "--no-group", "--exclude", "sources", f"{iso_mount}/", f"{vfat_mount}/"]),
+            (
+                "rsync to BOOT",
+                [
+                    "rsync",
+                    "-r",
+                    "--info=progress2",
+                    "--no-perms",
+                    "--no-owner",
+                    "--no-group",
+                    "--exclude",
+                    "sources",
+                    f"{iso_mount}/",
+                    f"{vfat_mount}/",
+                ],
+            ),
             ("mkdir sources", ["mkdir", "-p", f"{vfat_mount}/sources"]),
-            ("copy boot.wim", ["cp", f"{iso_mount}/sources/boot.wim", f"{vfat_mount}/sources/"]),
+            (
+                "copy boot.wim",
+                ["cp", f"{iso_mount}/sources/boot.wim", f"{vfat_mount}/sources/"],
+            ),
             ("mkdir NTFS", ["mkdir", "-p", ntfs_mount]),
             ("mount INSTALL", ["mount", p2, ntfs_mount]),
-            ("rsync to INSTALL (this is a VERY LONG process, output can be broken)", ["rsync", "-r", "--info=progress2", "--no-perms", "--no-owner", "--no-group", f"{iso_mount}/", f"{ntfs_mount}/"]),
-            ("umount INSTALL (this step is even longer than previous, just give it time)", ["umount", ntfs_mount]),
+            (
+                "rsync to INSTALL (this is a VERY LONG process, output can be broken)",
+                [
+                    "rsync",
+                    "-r",
+                    "--info=progress2",
+                    "--no-perms",
+                    "--no-owner",
+                    "--no-group",
+                    f"{iso_mount}/",
+                    f"{ntfs_mount}/",
+                ],
+            ),
+            (
+                "umount INSTALL (this step is even longer than previous, just give it time)",
+                ["umount", ntfs_mount],
+            ),
             ("umount BOOT", ["umount", vfat_mount]),
             ("umount ISO", ["umount", iso_mount]),
             ("sync buffers", ["sync"]),
-            ("remove dirs (if it fails, do it yourself)", ["rmdir", iso_mount, vfat_mount, ntfs_mount]),
+            (
+                "remove dirs (if it fails, do it yourself)",
+                ["rmdir", iso_mount, vfat_mount, ntfs_mount],
+            ),
         ]
         self.windows_worker = WindowsWorker(steps)
         self.windows_worker.progress.connect(self.status_output_win.append)
