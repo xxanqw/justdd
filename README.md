@@ -1,6 +1,7 @@
 <div align="center">
 
-![JustDD - USB Image Writer](images/icon.png)
+<img src="images/icon.png" alt="JustDD - USB Image Writer" width="300">
+
 # JustDD - USB Image Writer
 
 </div>
@@ -20,23 +21,25 @@ JustDD is a simple, open-source graphical tool to write Linux and Windows ISO im
 
 ## 📷 Screenshots
 
-![Linux ISO tab interface](images/linux.png)
-![Windows ISO tab interface](images/windows.png)
-![About dialog](images/about.png)
-![Sync tool interface](images/sync.png)
+<div align="center">
+   <img src="images/linux.png" alt="Linux ISO tab interface" width="300" />
+   <img src="images/windows.png" alt="Windows ISO tab interface" width="300" />
+   <img src="images/about.png" alt="About dialog" width="300" />
+   <img src="images/sync.png" alt="Sync tool interface" width="300" />
+</div>
+
 
 ## 🚀 Usage
 
-1. **Run the app** (requires root privileges):  
+1. **Arch Linux**
+
+   ```
+   yay -S justdd
+   ```
+
+   **Other distros**
    
    First, install `uv` package manager:
-   
-   Arch Linux:
-   ```bash
-   yay -S python-uv
-   ```
-   
-   Other distributions:
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
@@ -100,3 +103,4 @@ This creates a single executable file that includes all dependencies and can be 
 ## 🔗 Links
 
 - [GitHub Repository](https://github.com/xxanqw/justdd)
+- [AUR](https://aur.archlinux.org/packages/justdd)
