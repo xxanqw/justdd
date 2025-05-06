@@ -4,12 +4,17 @@ pkgver=0.1.0
 pkgrel=1
 pkgdesc="JustDD - Simple graphical USB image writer for Linux and Windows ISOs"
 arch=('any')
-url="https://github.com/xxanqw/justdd/tree/fixing-pkgbuild"
+url="https://github.com/xxanqw/justdd/"
 license=('GPL3')
 depends=('ntfs-3g' 'dosfstools' 'rsync' 'polkit')
 makedepends=('git' 'python' 'python-uv')
 source=("$pkgname::git+$url.git")
 md5sums=('SKIP')
+
+prepare() {
+    cd "$srcdir/$pkgname"
+    git checkout fixing-pkgbuild
+}
 
 build() {
     cd "$srcdir/$pkgname"
