@@ -32,6 +32,7 @@ from PySide6.QtGui import QIcon, QTextCursor, QPixmap
 from widgets.sync_widget import SyncWidget, SyncWorker
 from PySide6.QtGui import QIcon
 import tempfile
+from widgets.iso_downloader_widget import IsoDownloaderWidget
 
 
 # --- SyncWorker Class (Keep as is for now) ---
@@ -441,6 +442,18 @@ class DDApp(QWidget):
         self.sync_widget = SyncWidget()
         # Connect its progress signal to the main status output (now safe)
         self.sync_widget.syncProgress.connect(self.status_output.append)
+
+        # --- Create ISO Downloader Widget (floating, like SyncWidget) ---
+        self.iso_downloader_widget = IsoDownloaderWidget()
+
+        # --- Add button at the bottom to open ISO Downloader ---
+        bottom_button_layout = QHBoxLayout()
+        bottom_button_layout.addStretch()
+        self.open_iso_downloader_button = QPushButton("ISO Downloader")
+        self.open_iso_downloader_button.setToolTip("Open a tool to download Linux ISOs.")
+        self.open_iso_downloader_button.clicked.connect(self.open_iso_downloader_widget)
+        bottom_button_layout.addWidget(self.open_iso_downloader_button)
+        main_layout.addLayout(bottom_button_layout)
 
         # Initial drive scans and connections
         self.refresh_drives()  # linux drives
@@ -1034,6 +1047,12 @@ class DDApp(QWidget):
         self.sync_widget.show()
         self.sync_widget.raise_()
         self.sync_widget.activateWindow()
+
+    # --- Method to open the ISO Downloader Widget ---
+    def open_iso_downloader_widget(self):
+        self.iso_downloader_widget.show()
+        self.iso_downloader_widget.raise_()
+        self.iso_downloader_widget.activateWindow()
 
 
 if __name__ == "__main__":

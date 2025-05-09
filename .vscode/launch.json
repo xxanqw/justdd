@@ -1,0 +1,12 @@
+{
+    // Run or debug the app.py file with Python
+    "configurations": [
+        {
+            "name": "Run app.py",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/app.py",
+            "console": "integratedTerminal"
+        }
+    ]
+}

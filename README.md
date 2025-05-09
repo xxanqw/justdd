@@ -81,7 +81,7 @@ JustDD is a simple, open-source graphical tool to write Linux and Windows ISO im
 
 ## 🔨 Building
 
-To build a standalone executable, Nuitka is used. The package is included as a dev dependency.
+To build a standalone executable, PyInstaller is used. The package is included as a dev dependency.
 
 ### Install build dependencies:
 ```bash
