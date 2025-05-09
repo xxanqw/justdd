@@ -295,7 +295,7 @@ class DDApp(QWidget):
         self.iso_path_win = ""
         self.target_drive_win = ""
         self.drive_info_win = {}
-        self.setWindowTitle("JustDD - USB Image Writer (1.0)")
+        self.setWindowTitle("JustDD - USB Image Writer (1.1)")
 
         main_layout = QVBoxLayout(self)
         tabs = QTabWidget()
