@@ -41,8 +41,8 @@ JustDD is a simple, open-source graphical tool to write Linux and Windows ISO im
 
    Download the latest `justdd` install package from the [releases page](https://github.com/xxanqw/justdd/releases/latest).
 
-   > [!NOTE]  
-   > All needed dependencies like `ntfs-3g` etc. will be insalled together with `justdd` no worries!
+   >[!NOTE]  
+   >All needed dependencies like `ntfs-3g` etc. will be insalled together with `justdd` no worries!
 
    **Other distros**
    
