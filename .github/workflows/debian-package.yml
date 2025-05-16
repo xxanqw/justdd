@@ -1,0 +1,105 @@
+name: Build and Release Debian Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pip python3-setuptools python3-wheel build-essential debhelper devscripts fakeroot dh-python
+
+      - name: Extract version
+        id: extract_version
+        run: |
+          VERSION=$(grep -Po "(?<=pkgver=)([0-9]+\.[0-9]+\.[0-9]+)" PKGBUILD)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Version: $VERSION"
+
+      - name: Install Python dependencies
+        run: |
+          pip install uv
+          uv venv
+          source ./.venv/bin/activate
+          uv sync --all-extras
+          pip install pyinstaller
+
+      - name: Create debian directory structure
+        run: |
+          mkdir -p debian/source debian/usr/bin debian/usr/share/pixmaps debian/usr/share/applications debian/DEBIAN
+
+      - name: Create control file
+        run: |
+          cat > debian/DEBIAN/control << EOF
+          Package: justdd
+          Version: ${{ env.VERSION }}
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Depends: ntfs-3g, dosfstools, rsync, policykit-1
+          Maintainer: Ivan Potiienko <contact@xxanqw.pp.ua>
+          Description: JustDD - Simple graphical USB image writer for Linux and Windows ISOs
+           JustDD is a simple, open-source graphical tool to write
+           Linux and Windows ISO images to USB drives.
+          EOF
+
+      - name: Build binary
+        run: |
+          source ./.venv/bin/activate
+          pyinstaller --onefile --add-data "images/icon.png:images" --name justdd app.py
+          chmod +x dist/justdd
+          cp dist/justdd debian/usr/bin/
+
+      - name: Create desktop file and icons
+        run: |
+          cp images/icon.png debian/usr/share/pixmaps/justdd.png
+          cat > debian/usr/share/applications/justdd.desktop << EOF
+          [Desktop Entry]
+          Name=JustDD
+          Comment=USB Image Writer for Linux and Windows ISOs
+          Exec=justdd
+          Icon=justdd
+          Terminal=false
+          Type=Application
+          Categories=Utility;System;
+          EOF
+
+      - name: Create postinst script
+        run: |
+          cat > debian/DEBIAN/postinst << EOF
+          #!/bin/sh
+          set -e
+          echo "----------------------------------------------------------------------"
+          echo "NOTE: JustDD uses polkit for privilege escalation."
+          echo "If polkit is not enabled by default in your distribution, you may"
+          echo "need to start and enable the polkit service."
+          echo "----------------------------------------------------------------------"
+          exit 0
+          EOF
+          chmod +x debian/DEBIAN/postinst
+
+      - name: Build Debian package
+        run: |
+          fakeroot dpkg-deb --build debian
+          mv debian.deb justdd_${{ env.VERSION }}_amd64.deb
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: justdd_${{ env.VERSION }}_amd64.deb
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
