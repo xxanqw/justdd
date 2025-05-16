@@ -29,24 +29,24 @@ JustDD is a simple, open-source graphical tool to write Linux and Windows ISO im
 </div>
 
 
-## 🚀 Usage
+## 🚀 Installation/Usage
 
-1. **Arch Linux**
+**Arch Linux**
 
-   ```
-   yay -S justdd
-   ```
+```
+yay -S justdd
+```
 
-   **Debian/Ubuntu and Fedora/CentOS**
+**Debian/Ubuntu and Fedora/CentOS**
 
-   Download the latest `justdd` install package from the [releases page](https://github.com/xxanqw/justdd/releases/latest).
-
-   >[!NOTE]  
-   >All needed dependencies like `ntfs-3g` etc. will be insalled together with `justdd` no worries!
-
-   **Other distros**
+Download the latest `justdd` install package from the [releases page](https://github.com/xxanqw/justdd/releases/latest).
+> [!NOTE]  
+>  
+> All needed dependencies like `ntfs-3g` etc. will be insalled together with `justdd` no worries!
+ 
+**Other distros**
    
-   First, install `uv` package manager:
+First, install `uv` package manager:
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
@@ -65,18 +65,21 @@ JustDD is a simple, open-source graphical tool to write Linux and Windows ISO im
    python app.py
    ```
 
-2. **Linux ISO Tab**:
+**Linux ISO Tab**:
    - Click "Browse..." to select your ISO
    - Select your target USB drive
    - Click "Write to Drive" and confirm
 
-3. **Windows ISO Tab**:
+**Windows ISO Tab**:
    - Click "Browse..." to select a Windows ISO
    - Select your target USB drive
    - Click "Prepare USB" and confirm
 
-4. **Sync Tool**:
+**Sync Tool**:
    - Use the "Sync Tool" button to manually flush write buffers to the selected drive
+
+**ISO Downloader**:
+   - Use the "ISO Downloader" button to download your desired Linux distribution right inside JustDD!
 
 ## 📋 Requirements
 
