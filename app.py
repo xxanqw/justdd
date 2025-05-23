@@ -295,7 +295,7 @@ class DDApp(QWidget):
         self.iso_path_win = ""
         self.target_drive_win = ""
         self.drive_info_win = {}
-        self.setWindowTitle("JustDD - USB Image Writer (1.1)")
+        self.setWindowTitle("JustDD - USB Image Writer (1.2)")
 
         main_layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -420,7 +420,7 @@ class DDApp(QWidget):
 
         about_label = QLabel(
             "<b>JustDD - USB Image Writer</b><br>"
-            "Version 1.0<br><br>"
+            "Version 1.2<br><br>"
             "A simple, open-source tool to write Linux and Windows ISO images to USB drives.\n"
             "Supports manual sync, drive selection, and Windows USB preparation.<br><br>"
             "Author: xxanqw<br>"
