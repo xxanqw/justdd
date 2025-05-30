@@ -2,13 +2,11 @@ import sys
 import os
 import subprocess
 
-
 def resource_path(relative_path):
     # Get absolute path to resource, works for dev and for PyInstaller
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.dirname(__file__), relative_path)
-
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -33,7 +31,7 @@ from widgets.sync_widget import SyncWidget, SyncWorker
 from PySide6.QtGui import QIcon
 import tempfile
 from widgets.iso_downloader_widget import IsoDownloaderWidget
-
+from qt_material import apply_stylesheet
 
 # --- SyncWorker Class (Keep as is for now) ---
 class SyncWorker(QThread):
@@ -285,7 +283,7 @@ class DDApp(QWidget):
         flags |= (
             Qt.WindowType.Dialog
             | Qt.WindowStaysOnTopHint
-            | Qt.WindowType.X11BypassWindowManagerHint
+            #| Qt.WindowType.X11BypassWindowManagerHint
         )
         self.setWindowFlags(flags)
         # Initialize attributes before any method calls
@@ -295,7 +293,7 @@ class DDApp(QWidget):
         self.iso_path_win = ""
         self.target_drive_win = ""
         self.drive_info_win = {}
-        self.setWindowTitle("JustDD - USB Image Writer (1.1)")
+        self.setWindowTitle("JustDD - USB Image Writer (1.2)")
 
         main_layout = QVBoxLayout(self)
         tabs = QTabWidget()
@@ -420,7 +418,7 @@ class DDApp(QWidget):
 
         about_label = QLabel(
             "<b>JustDD - USB Image Writer</b><br>"
-            "Version 1.0<br><br>"
+            "Version 1.2<br><br>"
             "A simple, open-source tool to write Linux and Windows ISO images to USB drives.\n"
             "Supports manual sync, drive selection, and Windows USB preparation.<br><br>"
             "Author: xxanqw<br>"
@@ -1058,13 +1056,13 @@ class DDApp(QWidget):
 if __name__ == "__main__":
     os.environ["QT_LOGGING_RULES"] = "qt.qpa.wayland.textinput=false"
     app = QApplication(sys.argv)
-    app.setStyle("Fusion")
     # Set window icon for both X11 and Wayland
     icon_path = resource_path("images/icon.png")
     app.setWindowIcon(QIcon(icon_path))
     os.environ["XDG_CURRENT_DESKTOP"] = os.environ.get(
         "XDG_CURRENT_DESKTOP", ""
     )  # Ensure env is set for Wayland
+    apply_stylesheet(app, theme="dark_amber.xml")
     window = DDApp()
     window.resize(650, 450)
     window.show()

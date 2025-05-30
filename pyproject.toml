@@ -7,7 +7,8 @@ requires-python = ">=3.9, <3.14"
 dependencies = [
     "PySide6",
     "requests",
-    "beautifulsoup4"
+    "beautifulsoup4",
+    "qt-material>=2.17",
 ]
 
 [project.optional-dependencies]

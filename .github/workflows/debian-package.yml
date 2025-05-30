@@ -50,7 +50,7 @@ jobs:
           Section: utils
           Priority: optional
           Architecture: amd64
-          Depends: ntfs-3g, dosfstools, rsync, policykit-1
+          Depends: ntfs-3g, dosfstools, rsync, polkitd
           Maintainer: Ivan Potiienko <contact@xxanqw.pp.ua>
           Description: JustDD - Simple graphical USB image writer for Linux and Windows ISOs
            JustDD is a simple, open-source graphical tool to write
