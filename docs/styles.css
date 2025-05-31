@@ -1,0 +1,679 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap');
+
+:root {
+    --primary-color: #FDE68A; /* Pastel Yellow */
+    --primary-dark: #FBCF5A; /* Darker Pastel Yellow */
+    --secondary-color: #FDBA74; /* Pastel Orange/Peach as secondary */
+    --background-color: #2D2A2E; /* Darker, slightly desaturated purple for contrast */
+    --surface-color: #3E3B40; /* Slightly lighter surface */
+    --card-color: #4A474E; /* Card color, maintaining contrast */
+    --text-color: #F3F4F6; /* Light gray for text, good readability */
+    --text-muted: #A1A1AA; /* Muted text, slightly lighter */
+    --border-color: #5E5A60; /* Border color */
+    --success-color: #A7F3D0; /* Pastel Green for success */
+    --warning-color: #FDBA74; /* Using the secondary pastel orange for warning */
+    --gradient: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    --shadow: 0 10px 30px rgba(0, 0, 0, 0.2); /* Softened shadow */
+    --shadow-hover: 0 15px 40px rgba(0, 0, 0, 0.3); /* Softened hover shadow */
+    --coming-soon-color: rgb(0, 145, 230); /* Lighter pastel yellow for "Coming Soon" */
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Open Sans', sans-serif;
+    background-color: var(--background-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    overflow: hidden; /* Prevent scrolling */
+    padding-bottom: 0; /* Remove padding that was causing scrolling */
+    height: 100vh; /* Constrain to viewport height */
+}
+
+/* Container adjustments */
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Logo styling (moved from nav to hero) */
+.logo-container {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.logo-img {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+}
+
+.logo-text {
+    font-size: 2rem;
+    font-weight: bold;
+    color: var(--text-color);
+    letter-spacing: 0.5px;
+}
+
+/* Hero Section - Improved */
+.hero {
+    height: 100vh; /* Fixed height instead of min-height */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    background: 
+        radial-gradient(circle at 10% 20%, rgba(253, 230, 138, 0.15) 0%, transparent 60%),
+        radial-gradient(circle at 90% 80%, rgba(251, 186, 116, 0.15) 0%, transparent 60%);
+    overflow-y: auto; /* Allow scrolling within hero if needed */
+    padding-bottom: 70px; /* Make room for footer */
+    box-sizing: border-box; /* Include padding in height calculation */
+}
+
+.hero-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 80px;
+    align-items: center;
+    max-width: 1300px;
+    width: 100%;
+    margin: 0 auto;
+}
+
+.hero-title {
+    font-size: 4rem;
+    font-weight: 800;
+    line-height: 1.1;
+    margin-bottom: 25px;
+    letter-spacing: -0.5px;
+}
+
+.gradient-text {
+    background: var(--gradient);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.hero-description {
+    font-size: 1.3rem;
+    color: var(--text-muted);
+    margin-bottom: 35px;
+    line-height: 1.7;
+    max-width: 90%;
+}
+
+.hero-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 35px;
+}
+
+.hero-badges img {
+    height: 28px;
+    border-radius: 4px;
+    transition: transform 0.3s ease;
+}
+
+.hero-badges img:hover {
+    transform: translateY(-3px);
+}
+
+.hero-buttons {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.btn {
+    padding: 14px 32px;
+    border-radius: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 1.05rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.btn-primary {
+    background: var(--gradient);
+    color: var(--background-color);
+    box-shadow: var(--shadow);
+}
+
+.btn-primary:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-hover);
+}
+
+.btn-secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-color);
+    border: 2px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    border-color: var(--primary-color);
+    color: var(--primary-color);
+    transform: translateY(-3px);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.hero-image {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.hero-screenshot {
+    max-width: 100%;
+    height: auto;
+    border-radius: 16px;
+    box-shadow: 0 15px 40px rgba(0, 0, 0, 0.25);
+    transition: all 0.4s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.hero-screenshot:hover {
+    transform: scale(1.03) translateY(-10px);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
+}
+
+/* Modal Styles - Improved to match reference design */
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1001;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    overflow: auto;
+    background-color: rgba(0,0,0,0.85);
+    backdrop-filter: blur(8px);
+    animation: fadeInBackdrop 0.3s ease-out;
+}
+
+@keyframes fadeInBackdrop {
+    from { opacity: 0; backdrop-filter: blur(0px); }
+    to { opacity: 1; backdrop-filter: blur(12px); }
+}
+
+.modal-content {
+    background-color: #3A383C; /* Darker background matching the screenshot */
+    margin: 8vh auto;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    width: 92%;
+    max-width: 800px;
+    border-radius: 16px;
+    position: relative;
+    box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+    animation: slideInModal 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: hidden;
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+@keyframes slideInModal {
+    from { opacity: 0; transform: translateY(-40px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.modal-header {
+    background: rgba(255, 255, 255, 0.02);
+    padding: 25px 30px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    position: relative;
+}
+
+.modal-header .section-title {
+    margin: 0;
+    font-size: 2rem;
+    text-align: left;
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+.modal-header .subtitle {
+    color: var(--text-muted);
+    margin-top: 10px;
+    font-size: 1rem;
+    font-weight: normal;
+}
+
+.modal-body {
+    padding: 30px;
+}
+
+.close-button {
+    color: rgba(255, 255, 255, 0.6);
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: bold;
+    transition: all 0.2s ease;
+    background: transparent;
+    border-radius: 50%;
+    border: none;
+}
+
+.close-button:hover {
+    color: var(--text-color);
+    cursor: pointer;
+}
+
+/* Download Cards - Fixed with uniform height */
+.download-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.download-card {
+    background: rgba(34, 32, 36, 0.8);
+    padding: 25px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    transition: all 0.3s ease;
+    position: relative;
+    height: 250px; /* Fixed height for all cards */
+    display: flex;
+    flex-direction: column;
+}
+
+.download-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    background: rgba(40, 38, 42, 0.8);
+}
+
+.download-card.recommended {
+    border: 1px solid rgba(253, 230, 138, 0.3);
+    background: rgba(34, 32, 36, 0.95);
+    position: relative;
+}
+
+.download-card.recommended::after {
+    content: 'RECOMMENDED';
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: var(--primary-color);
+    color: #222;
+    font-size: 0.65rem;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.download-card.soon {
+    border: 1px solid rgba(138, 201, 253, 0.3);
+    background: rgba(34, 32, 36, 0.95);
+    position: relative;
+}
+
+.download-card.soon::after {
+    content: 'COMING SOON';
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: var(--coming-soon-color);
+    color: #222;
+    font-size: 0.65rem;
+    font-weight: bold;
+    padding: 2px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.download-header {
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.download-header h3 {
+    font-size: 1.3rem;
+    color: var(--text-color);
+    font-weight: 600;
+}
+
+/* Wide card spanning two columns */
+.download-card.wide {
+    grid-column: span 2;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 25px 30px;
+    height: 120px; /* Make it shorter than regular cards */
+}
+
+.download-card.wide .download-header {
+    margin-bottom: 0;
+    margin-right: 15px;
+}
+
+.download-card.wide h3 {
+    font-size: 1.5rem;
+}
+
+.download-card.wide p {
+    font-size: 1.1rem;
+    margin-bottom: 0;
+}
+
+.download-card.wide i {
+    font-size: 2rem;
+    margin-right: 15px;
+}
+
+/* Make the wide card responsive */
+@media (max-width: 900px) {
+    .download-card.wide {
+        grid-column: span 1; /* Take up one column on mobile */
+        flex-direction: column;
+        text-align: center;
+        padding: 25px;
+    }
+    
+    .download-card.wide .download-header {
+        margin-right: 0;
+        margin-bottom: 12px;
+        justify-content: center;
+    }
+}
+
+/* Improved code block with scrolling */
+.code-block {
+    background: rgba(20, 18, 22, 0.8);
+    padding: 10px 15px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    position: relative;
+    font-family: monospace;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border: none;
+    max-height: 80px; /* Limit height */
+    overflow: hidden;
+    max-width: 310px;
+}
+
+.code-block-wrapper {
+    flex: 1;
+    overflow-x: auto; /* Horizontal scrolling */
+    overflow-y: auto; /* Vertical scrolling */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+}
+
+.code-block-wrapper::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+.code-block-wrapper::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.code-block-wrapper::-webkit-scrollbar-thumb {
+    background-color: var(--border-color);
+    border-radius: 3px;
+}
+
+.code-block code {
+    color: var(--text-color);
+    white-space: pre;
+    font-size: 0.85rem;
+    display: block;
+}
+
+.copy-btn {
+    background: var(--primary-color);
+    color: rgba(0, 0, 0, 0.8);
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    margin-left: 10px;
+    align-self: flex-start;
+}
+
+/* Button styling in download cards - Improved centering */
+.download-card .btn {
+    padding: 10px 20px;
+    font-size: 0.9rem;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    margin-top: auto; /* Push to bottom of card */
+    border-radius: 8px;
+}
+
+.download-card .btn-primary {
+    background: var(--gradient);
+    color: var(--background-color);
+}
+
+/* Ensure button text remains centered when hovering */
+.download-card .btn:hover {
+    transform: translateY(-3px);
+}
+
+/* Card content layout */
+.download-card p {
+    color: var(--text-muted);
+    margin-bottom: 15px;
+    font-size: 0.9rem;
+    line-height: 1.4;
+    flex-shrink: 0;
+}
+
+/* Animations */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.fade-in-up {
+    animation: fadeInUp 0.6s ease-out;
+}
+
+/* Scroll animations */
+.animate-on-scroll {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.6s ease-out;
+}
+
+.animate-on-scroll.animated {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Floating Footer */
+.floating-footer {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background-color: rgba(45, 42, 46, 0.9);
+    backdrop-filter: blur(8px);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 15px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 995;
+    box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.15);
+    transform: translateY(0);
+}
+
+.footer-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.footer-logo img {
+    height: 30px;
+    border-radius: 6px;
+}
+
+.footer-logo span {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.footer-links {
+    display: flex;
+    gap: 20px;
+}
+
+.footer-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.9rem;
+    transition: color 0.2s ease;
+}
+
+.footer-links a:hover {
+    color: var(--primary-color);
+}
+
+.footer-social {
+    display: flex;
+    gap: 15px;
+}
+
+.footer-social a {
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    transition: all 0.2s ease;
+}
+
+.footer-social a:hover {
+    color: var(--primary-color);
+    transform: translateY(-3px);
+}
+
+@media (max-width: 768px) {
+    .floating-footer {
+        flex-direction: column;
+        gap: 15px;
+        padding: 15px;
+    }
+    
+    .footer-links {
+        order: 3;
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+    
+    .footer-social {
+        order: 2;
+    }
+}
+
+/* Responsive Design */
+@media (max-width: 900px) {
+    .hero-container {
+        grid-template-columns: 1fr;
+        gap: 40px;
+        text-align: center;
+    }
+
+    .logo-container {
+        justify-content: center;
+    }
+    
+    .hero-title {
+        font-size: 3rem;
+    }
+    
+    .hero-description {
+        font-size: 1.2rem;
+        max-width: 100%;
+    }
+    
+    .hero-buttons {
+        justify-content: center;
+    }
+    
+    .hero-badges {
+        justify-content: center;
+    }
+    
+    .download-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .modal-content {
+        width: 95%;
+        margin: 5vh auto;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero-title {
+        font-size: 2.5rem;
+    }
+    
+    .hero-buttons {
+        flex-direction: column;
+        width: 100%;
+    }
+    
+    .btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    .modal-content {
+        padding: 30px 20px;
+    }
+    
+    .download-card {
+        padding: 20px;
+    }
+}
