@@ -46,7 +46,7 @@ echo "- polkit"
 echo "- dosfstools"
 echo ""
 echo "Press Enter to continue or Ctrl+C to stop..."
-read -r
+read -r < /dev/tty
 
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then
@@ -98,17 +98,18 @@ if ! command -v uv &> /dev/null; then
     exit 1
 else
     echo "uv is installed. Building application..."
+
+    git clone https://github.com/xxanqw/justdd.git
+
+    cd justdd
     
-    # Install build dependencies
     uv sync --all-extras
 
-    # Build single-file executable
     uv run pyinstaller --onefile \
         --add-data "images/icon.png:images" \
         --name justdd \
         app.py
 
-    # Move executable to project root
     mv dist/justdd ./
 
     echo "Build complete. Run ./justdd to start the application."
