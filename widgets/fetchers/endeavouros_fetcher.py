@@ -1,8 +1,6 @@
 from . import fetch_url
 import re
 import os
-from urllib.parse import urljoin
-from bs4 import BeautifulSoup
 
 
 def fetch_endeavouros_isos(config):

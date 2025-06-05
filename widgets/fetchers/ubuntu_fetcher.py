@@ -1,8 +1,5 @@
 from . import fetch_url, extract_links
 import re
-from bs4 import BeautifulSoup
-import requests
-import os
 
 def fetch_ubuntu_versions(config):
     versions_data = []

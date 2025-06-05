@@ -3,7 +3,6 @@
 from . import fetch_url, extract_links
 import re
 from bs4 import BeautifulSoup
-import requests
 
 
 def fetch_fedora_versions(config):
