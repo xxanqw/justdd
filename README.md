@@ -14,53 +14,77 @@
 
 </div>
 
-**JustDD** is a modern, cross-platform USB image writer designed for both beginners and power users. Whether you're creating a Linux live USB or preparing a Windows installer, JustDD provides a safe, intuitive interface with advanced features for professionals.
+**JustDD** is a modern, cross-platform USB image writer with an intuitive wizard-style interface inspired by Balena Etcher. Designed for both beginners and power users, JustDD provides a safe, step-by-step process for creating Linux live USBs and Windows installer drives.
 
 🎯 **Perfect for:**
+
 - System administrators managing multiple OS installations
 - Linux enthusiasts trying new distributions
 - IT professionals preparing recovery media
-- Anyone who needs reliable USB image writing
+- Anyone who needs reliable USB image writing with a guided interface
 
 ## ✨ Features
 
+### 🧙‍♂️ Three-Step Wizard Interface
+
+- **Step 1 - Select Image**: Browse and choose your ISO file with automatic OS detection
+- **Step 2 - Choose Drive**: Pick your target USB drive from detected removable devices
+- **Step 3 - Flash**: Review settings and write your image with real-time progress
+- **Visual progress indicator**: Clean step indicator shows your current position
+- **Smart navigation**: Back/Continue buttons guide you through the process
+
+### 🔍 Intelligent ISO Detection
+
+- **Automatic OS type detection**: Recognizes Linux distributions and Windows versions
+- **Distribution identification**: Detects Ubuntu, Fedora, Debian, Arch, and more
+- **Version parsing**: Extracts version information from filenames
+- **File size display**: Shows human-readable file sizes
+- **Real-time validation**: Instant feedback on ISO selection
+
 ### 🐧 Linux ISO Support
+
 - **Direct `dd` writing** with real-time progress tracking
-- **Verification support** to ensure data integrity
-- **Speed optimization** for different USB drive types
-- **Automatic drive detection** with safety checks
+- **Optimized block size** (4MB) for faster writing
+- **Status monitoring** with detailed command output
+- **Automatic syncing** ensures complete data transfer
+- **Safe device detection** prevents accidental system drive overwrites
 
 ### 🪟 Windows USB Preparation
-- **Intelligent partitioning** (FAT32/NTFS) based on ISO requirements
-- **UEFI and Legacy BIOS** boot support
-- **Large file handling** (>4GB) with automatic NTFS formatting
-- **Boot sector configuration** for maximum compatibility
 
-### 🔧 Advanced Tools
-- **Manual Sync Tool**: Force filesystem buffer flush for data integrity
-- **Built-in ISO Downloader**: Download popular Linux distributions directly
+- **Intelligent dual-partition setup** (FAT32 boot + NTFS install)
+- **GPT partition table** for modern UEFI systems
+- **Automatic file splitting** handles large install.wim files
+- **Boot sector configuration** for maximum compatibility
+- **Progress tracking** through each preparation stage
 
 ### 🛡️ Safety & Security
-- **Removable drive detection**: Only shows safe target drives
-- **Write confirmation**: Multiple confirmation steps prevent accidents
-- **Privilege escalation**: Secure `pkexec` integration
-- **Process monitoring**: Real-time command output and error handling
 
-### 🎨 User Experience
-- **Tabbed interface**: Separate workflows for different OS types
-- **Dark theme**: Comfortable viewing in any environment
-- **Responsive design**: Works on various screen sizes
+- **Removable drive detection**: Only shows USB/removable drives
+- **Multiple confirmations**: Warning dialogs prevent accidents
+- **Privilege escalation**: Secure `pkexec` integration
+- **Process isolation**: Safe command execution with error handling
+- **Graceful cancellation**: Stop operations safely at any time
+
+### 🎨 Modern User Experience
+
+- **Dark theme**: Professional appearance with golden accents
+- **Responsive layout**: Adapts to different screen sizes
+- **Visual feedback**: Icons and colors guide user actions
+- **Comprehensive logging**: Built-in log viewer for troubleshooting
+- **Additional tools**: ISO downloader and system information
 
 ## 📷 Screenshots
 
 <div align="center">
-   <img src="images/linux.png" alt="Linux ISO tab interface" width="350" />
-   <img src="images/windows.png" alt="Windows ISO tab interface" width="350" />
-   <img src="images/about.png" alt="About dialog" width="350" />
-   <img src="images/iso-downloader.png" alt="ISO Downloader" width="350" />
-   <img src="images/sync.png" alt="Sync tool interface" width="350" />
+    <img src="images/main.png" alt="Image selection page" width="350" />
+    <img src="images/drive.png" alt="Drive selection page" width="350" />
+    <img src="images/flash.png" alt="Flash confirmation page" width="350" />
+    <img src="images/linux.png" alt="Flashing progress (Linux ISO)" width="350" />
+    <img src="images/windows.png" alt="Flashing progress (Windows ISO)" width="350" />
+    <img src="images/success.png" alt="Success page" width="350" />
+    <img src="images/iso-downloader.png" alt="ISO Downloader" width="350" />
+    <img src="images/about.png" alt="About dialog" width="350" />
 </div>
-
 
 ## 🚀 Quick Start
 
@@ -81,6 +105,7 @@ git clone https://aur.archlinux.org/justdd.git
 cd justdd
 makepkg -si
 ```
+
 </details>
 
 <details>
@@ -98,6 +123,7 @@ sudo apt-get install -f
 ```
 
 **Dependencies included:** `ntfs-3g`, `parted`, `rsync`, and other required tools.
+
 </details>
 
 <details>
@@ -113,13 +139,15 @@ sudo rpm -i justdd-*.rpm
 # Or using dnf
 sudo dnf install justdd-*.rpm
 ```
+
 </details>
 
 <details>
 <summary><b>🔧 Other Distributions (From Source)</b></summary>
 
 **Prerequisites:**
-- Python 3.9+ 
+
+- Python 3.9+
 - Git
 - UV package manager
 
@@ -138,38 +166,51 @@ uv sync
 # Launch JustDD
 python app.py
 ```
+
 </details>
 
 ### 🎯 Basic Usage
 
-**🐧 Writing Linux ISOs:**
-1. Launch JustDD
-2. Select the **Linux** tab
-3. Click **"Browse..."** to select your ISO file
-4. Choose your target USB drive from the dropdown
-5. Click **"Write to Drive"** and confirm the operation
-6. Wait for completion and verification
+**📁 Step 1 - Select Image:**
 
-**🪟 Preparing Windows USBs:**
-1. Select the **Windows** tab  
-2. Click **"Browse..."** to select your Windows ISO
-3. Choose your target USB drive
-4. Click **"Prepare USB"** and confirm
-5. JustDD will automatically handle partitioning and file copying
+1. Launch JustDD - you'll see the image selection page
+2. Click **"Browse for Image"** to select your ISO file
+3. JustDD automatically detects if it's Linux or Windows
+4. See file size and distribution information displayed
+5. Click **"Continue"** to proceed
 
-**🔄 Using the Sync Tool:**
-- Click **"Sync Tool"** to manually flush write buffers
-- Useful before safely removing USB drives
-- Ensures all data is properly written to storage
+**💾 Step 2 - Choose Drive:**
 
-**📥 ISO Downloader:**
-- Click **"ISO Downloader"** to browse and download Linux distributions
-- Supports major distributions: Ubuntu, Fedora, Debian, Arch, and more
-- Downloads directly to your preferred location
+1. Review the list of available USB drives
+2. Click **"🔄 Refresh"** if your drive isn't visible
+3. Select your target drive from the list
+4. Drive information (size, model) is displayed
+5. Click **"Continue"** when ready
+
+**⚡ Step 3 - Flash:**
+
+1. Review the flash summary showing your selections
+2. Read the warning about data loss carefully
+3. Click **"Flash!"** to begin the operation
+4. Monitor real-time progress and status updates
+5. Wait for completion - don't interrupt the process!
+
+**🎉 Success:**
+
+- See confirmation of successful flash operation
+- Click **"Flash Another Image"** to start over
+- Your bootable USB is ready to use!
+
+**🔧 Additional Features:**
+
+- **Show Logs**: View detailed operation logs and troubleshooting info
+- **ISO**: Access the built-in ISO downloader for Linux distributions
+- **About**: View version information and credits
 
 ## 📋 System Requirements
 
 ### Minimum Requirements
+
 - **OS**: Linux (any modern distribution)
 - **Python**: 3.9 or newer
 - **RAM**: 512 MB available
@@ -177,25 +218,26 @@ python app.py
 - **Privileges**: Ability to run `pkexec`
 
 ### Required System Tools
+
 JustDD requires these command-line tools (usually pre-installed):
 
-| Tool | Purpose | Usually found in |
-|------|---------|------------------|
-| `dd` | Raw disk writing | `coreutils` |
-| `lsblk` | Block device listing | `util-linux` |
-| `parted` | Disk partitioning | `parted` |
-| `mkfs.vfat` | FAT32 formatting | `dosfstools` |
-| `mkfs.ntfs` | NTFS formatting | `ntfs-3g` |
-| `rsync` | File synchronization | `rsync` |
-| `mount`/`umount` | Filesystem mounting | `util-linux` |
-| `wipefs` | Filesystem signature removal | `util-linux` |
-| `pkexec` | Privilege escalation | `polkit` |
+| Tool             | Purpose                      | Usually found in |
+| ---------------- | ---------------------------- | ---------------- |
+| `dd`             | Raw disk writing             | `coreutils`      |
+| `lsblk`          | Block device listing         | `util-linux`     |
+| `parted`         | Disk partitioning            | `parted`         |
+| `mkfs.vfat`      | FAT32 formatting             | `dosfstools`     |
+| `mkfs.ntfs`      | NTFS formatting              | `ntfs-3g`        |
+| `rsync`          | File synchronization         | `rsync`          |
+| `mount`/`umount` | Filesystem mounting          | `util-linux`     |
+| `wipefs`         | Filesystem signature removal | `util-linux`     |
+| `pkexec`         | Privilege escalation         | `polkit`         |
 
 ### Python Dependencies
+
 - **PySide6**: Qt6 bindings for Python
 - **requests**: HTTP library for ISO downloads
 - **beautifulsoup4**: HTML parsing for distribution websites
-- **qt-material**: Material Design themes
 
 > **📝 Note**: Package installations automatically handle all dependencies.
 
@@ -250,6 +292,7 @@ makepkg -si
 # Or for AUR submission
 makepkg --printsrcinfo > .SRCINFO
 ```
+
 </details>
 
 <details>
@@ -260,6 +303,7 @@ makepkg --printsrcinfo > .SRCINFO
 # Create debian/ directory structure and build with debuild
 # See Debian packaging documentation for details
 ```
+
 </details>
 
 <details>
@@ -270,41 +314,73 @@ makepkg --printsrcinfo > .SRCINFO
 # Create .spec file and build with rpmbuild
 # See RPM packaging documentation for details
 ```
+
 </details>
 
 ## 🔒 Security & Safety
 
 ### Security Model
+
 - **Privilege Separation**: JustDD runs as a regular user and only elevates privileges for specific disk operations
 - **Safe Command Execution**: All system commands are carefully validated and sanitized
 - **Drive Detection**: Only removable drives are shown to prevent accidental system drive overwrites
 - **Confirmation Dialogs**: Multiple confirmation steps before any destructive operations
+- **Process Monitoring**: Real-time command output and error handling
 
 ### Best Practices
-- **⚠️ Always verify your target drive** before writing - data will be permanently lost
-- **🔌 Use quality USB drives** for better reliability and performance  
+
+- **⚠️ Always verify your target drive** before flashing - data will be permanently lost
+- **🔌 Use quality USB drives** for better reliability and performance
 - **💾 Backup important data** before any disk operations
 - **🔄 Verify your ISOs** using checksums when available
-- **⏹️ Don't interrupt** the writing process to avoid corrupted drives
+- **⏹️ Don't interrupt** the flashing process to avoid corrupted drives
+- **🖥️ Check logs** if something goes wrong - detailed information is available
 
 ### Permissions Required
+
 JustDD requires elevated privileges for:
+
 - Reading/writing raw block devices (`/dev/sdX`)
 - Mounting and unmounting filesystems
 - Creating and modifying partition tables
 - Formatting filesystems
 
 **Why `pkexec`?**
+
 - More secure than `sudo` for GUI applications
 - Provides better user feedback and authentication dialogs
 - Follows modern Linux security best practices
 - Can be configured via PolicyKit rules
+
+## 🛠️ Wizard Interface Details
+
+### Step Indicator
+
+The compact step indicator at the top shows your progress:
+- **Step 1**: Select Image (📁)
+- **Step 2**: Select Drive (💾)
+- **Step 3**: Flash (⚡)
+
+### Navigation
+
+- **Back**: Return to the previous step (when available)
+- **Continue**: Proceed to the next step (when valid selection is made)
+- **Flash!**: Start the flashing operation (final step)
+- **Cancel**: Stop the current operation and return to setup
+
+### Error Handling
+
+- Invalid ISO files are rejected with helpful messages
+- Missing system tools are detected and reported
+- Drive access issues are clearly explained
+- Operation logs provide detailed troubleshooting information
 
 ## 📄 License
 
 This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](LICENSE) file for details.
 
 ### What this means:
+
 - ✅ **Free to use** for any purpose
 - ✅ **Free to modify** and distribute
 - ✅ **Free to distribute** your modifications
@@ -315,10 +391,10 @@ This project is licensed under the **GNU General Public License v3.0** - see the
 ## 🔗 Links & Resources
 
 ### 📦 Downloads & Packages
+
 - **[GitHub Releases](https://github.com/xxanqw/justdd/releases/latest)** - Pre-built packages for all distributions
 - **[AUR Package](https://aur.archlinux.org/packages/justdd)** - Arch User Repository
 - **[GitHub Repository](https://github.com/xxanqw/justdd)** - Source code and development
-
 
 ---
 
@@ -326,7 +402,7 @@ This project is licensed under the **GNU General Public License v3.0** - see the
 
 **Made with ❤️ by xxanqw**
 
-*If JustDD helped you, consider giving it a ⭐ on GitHub!*
+_If JustDD helped you, consider giving it a ⭐ on GitHub!_
 
 [![Star History Chart](https://api.star-history.com/svg?repos=xxanqw/justdd&type=Date)](https://star-history.com/#xxanqw/justdd&Date)
 

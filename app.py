@@ -1,737 +1,312 @@
 import sys
 import os
-import subprocess
+
 
 def resource_path(relative_path):
-    # Get absolute path to resource, works for dev and for PyInstaller
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.dirname(__file__), relative_path)
 
+
 from PySide6.QtWidgets import (
     QApplication,
+    QMainWindow,
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
     QPushButton,
     QLabel,
-    QLineEdit,
+    QProgressBar,
     QFileDialog,
     QMessageBox,
-    QComboBox,
-    QTextEdit,
-    QFormLayout,
-    QTabWidget,
-    QCheckBox,
+    QStackedWidget,
     QFrame,
+    QSizePolicy,
+    QListWidget,
+    QListWidgetItem,
 )
-from PySide6.QtCore import Qt, QProcess, QThread, Signal
-from PySide6.QtGui import QIcon, QTextCursor, QPixmap
-from widgets.sync_widget import SyncWidget, SyncWorker
-from PySide6.QtGui import QIcon
-import tempfile
+from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtGui import QPixmap, QPainter, QColor, QIcon
+from styles import get_etcher_style
+from widgets.logs_window import LogsWindow
 from widgets.iso_downloader_widget import IsoDownloaderWidget
-from qt_material import apply_stylesheet
+from widgets.about_widget import AboutWidget
+import subprocess
+import tempfile
+import re
 
-# --- SyncWorker Class (Keep as is for now) ---
-class SyncWorker(QThread):
-    progress = Signal(str)
-    finished = Signal(bool)
 
-    def __init__(self, device, parent=None):
-        super().__init__(parent)
-        self.device = device
-
-    def run(self):
-        import tempfile
-        import os
-
-        # Check for busy processes on the device
+class ISODetector:
+    @staticmethod
+    def detect_iso_type(iso_path):
+        # Detect if ISO is Linux or Windows based on file contents and structure
         try:
-            res = subprocess.run(
-                ["fuser", "-m", self.device], capture_output=True, text=True, timeout=3
-            )
-            if res.returncode == 0 and res.stdout.strip():
-                pids = res.stdout.strip()
-                self.progress.emit(
-                    f"Error: Device {self.device} is busy or mounted by PID(s): {pids}"
+            import subprocess
+
+            try:
+                result = subprocess.run(
+                    ["file", iso_path], capture_output=True, text=True, timeout=5
                 )
-                self.progress.emit(
-                    "Please unmount the drive or stop processes using it before syncing."
-                )
-                self.finished.emit(False)
-                return
-            elif res.returncode != 0 and res.stderr:
-                self.progress.emit(
-                    f"Warning: 'fuser' check failed: {res.stderr.strip()}"
-                )
-                self.progress.emit("Proceeding with sync despite fuser warning...")
-            else:
-                self.progress.emit(
-                    f"Device {self.device} appears free, proceeding to sync..."
-                )
-        except subprocess.TimeoutExpired:
-            self.progress.emit(
-                f"Error: 'fuser' command timed out checking {self.device}. Cannot safely sync."
-            )
-            self.finished.emit(False)
-            return
-        except FileNotFoundError:
-            self.progress.emit(
-                "Warning: 'fuser' command not found. Cannot check if device is busy. Proceeding with sync..."
-            )
+                file_output = result.stdout.lower()
+            except:
+                file_output = ""
+
+            details = {
+                "name": "Unknown",
+                "version": "Unknown",
+                "architecture": "Unknown",
+                "size": ISODetector._get_file_size(iso_path),
+            }
+
+            filename = os.path.basename(iso_path).lower()
+
+            windows_patterns = [
+                "windows",
+                "win10",
+                "win11",
+                "win7",
+                "win8",
+                "server",
+                "msdn",
+                "microsoft",
+                "office",
+            ]
+
+            linux_patterns = [
+                "ubuntu",
+                "debian",
+                "fedora",
+                "centos",
+                "rhel",
+                "opensuse",
+                "mint",
+                "arch",
+                "manjaro",
+                "kali",
+                "parrot",
+                "elementary",
+                "zorin",
+                "pop",
+                "endeavour",
+                "garuda",
+                "solus",
+                "void",
+            ]
+
+            for pattern in windows_patterns:
+                if pattern in filename:
+                    details["name"] = ISODetector._extract_windows_info(filename)
+                    return ("windows", details)
+
+            for pattern in linux_patterns:
+                if pattern in filename:
+                    details["name"] = ISODetector._extract_linux_info(filename)
+                    return ("linux", details)
+
+            iso_type, iso_details = ISODetector._examine_iso_contents(iso_path)
+            if iso_type != "unknown":
+                details.update(iso_details)
+                return (iso_type, details)
+
+            if "boot" in file_output:
+                if "microsoft" in file_output or "windows" in file_output:
+                    details["name"] = "Windows (detected)"
+                    return ("windows", details)
+                else:
+                    details["name"] = "Linux (detected)"
+                    return ("linux", details)
+
+            return ("unknown", details)
+
         except Exception as e:
-            self.progress.emit(f"Error checking device busy status: {e}")
-            self.progress.emit(
-                "Proceeding with sync despite error checking busy status..."
+            return (
+                "unknown",
+                {
+                    "name": "Detection failed",
+                    "error": str(e),
+                    "size": ISODetector._get_file_size(iso_path),
+                },
             )
 
-        # Perform sync using a shell script for all commands
-        # Add pkexec root check at the top of the script
-        script_lines = [
-            'if [ "$(id -u)" -ne 0 ]; then exec pkexec bash "$0" "$@"; fi',
-            "set -e",
-        ]
-        script_lines.append(f'echo "Syncing filesystem buffers..."')
-        script_lines.append("sync")
-        script_content = "\n".join(script_lines)
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".sh") as tf:
-            tf.write(script_content)
-            script_path = tf.name
+    @staticmethod
+    def _get_file_size(file_path):
+        # Get human readable file size
         try:
-            os.chmod(script_path, 0o700)
-            proc = subprocess.Popen(
-                ["bash", script_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-            )
-            for line in proc.stdout:
-                self.progress.emit(line.rstrip())
-            proc.wait()
-            if proc.returncode == 0:
-                self.progress.emit("Sync command finished.")
-                self.finished.emit(True)
-            else:
-                self.progress.emit(f"Sync script exited with code {proc.returncode}")
-                self.finished.emit(False)
-        except Exception as e:
-            self.progress.emit(f"Sync failed with unexpected error: {e}")
-            self.finished.emit(False)
-        finally:
-            os.unlink(script_path)
+            size_bytes = os.path.getsize(file_path)
+            for unit in ["B", "KB", "MB", "GB"]:
+                if size_bytes < 1024:
+                    return f"{size_bytes:.1f} {unit}"
+                size_bytes /= 1024
+            return f"{size_bytes:.1f} TB"
+        except:
+            return "Unknown"
 
-
-# --- SyncWidget Class ---
-class SyncWidget(QWidget):
-    # Signals to communicate with the main app
-    syncProgress = Signal(str)
-    syncFinished = Signal(bool, str)
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._target_drive = ""
-        self._sync_worker = None
-
-        # Set window properties
-        self.setWindowTitle("Drive Sync Tool")
-        flags = Qt.WindowType.Tool | Qt.WindowStaysOnTopHint
-        self.setWindowFlags(flags)
-        self.setMinimumWidth(300)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-
-        # Description Label (Optional but helpful)
-        description_label = QLabel(
-            "Use this tool to manually sync write buffers to the selected Linux drive."
-        )
-        description_label.setWordWrap(True)
-        layout.addWidget(description_label)
-
-        # Drive Info Label
-        self.drive_label = QLabel("Target Drive: <None Selected>")
-        layout.addWidget(self.drive_label)
-
-        # Sync Button
-        self.sync_button = QPushButton("Sync Drive Buffers")
-        self.sync_button.setToolTip("Flush OS write buffers to the selected drive.")
-        self.sync_button.clicked.connect(self._start_sync)
-        self.sync_button.setEnabled(False)  # Initially disabled
-        layout.addWidget(self.sync_button)
-
-        layout.addStretch()
-
-        self.setLayout(layout)
-
-    def setTargetDrive(self, drive_path):
-        self._target_drive = drive_path
-        if self._target_drive:
-            self.drive_label.setText(f"Target Drive: {self._target_drive}")
+    @staticmethod
+    def _extract_windows_info(filename):
+        # Extract Windows version info from filename
+        if "win11" in filename or "windows11" in filename:
+            return "Windows 11"
+        elif "win10" in filename or "windows10" in filename:
+            return "Windows 10"
+        elif "win8" in filename or "windows8" in filename:
+            return "Windows 8"
+        elif "win7" in filename or "windows7" in filename:
+            return "Windows 7"
+        elif "server" in filename:
+            return "Windows Server"
         else:
-            self.drive_label.setText("Target Drive: <None Selected>")
+            return "Windows"
 
-        # Enable button only if a drive is set and no sync is running
-        is_running = self._sync_worker is not None and self._sync_worker.isRunning()
-        self.sync_button.setEnabled(bool(self._target_drive) and not is_running)
+    @staticmethod
+    def _extract_linux_info(filename):
+        # Extract Linux distribution info from filename
+        distros = {
+            "ubuntu": "Ubuntu",
+            "debian": "Debian",
+            "fedora": "Fedora",
+            "centos": "CentOS",
+            "mint": "Linux Mint",
+            "arch": "Arch Linux",
+            "manjaro": "Manjaro",
+            "kali": "Kali Linux",
+            "opensuse": "openSUSE",
+            "elementary": "elementary OS",
+            "zorin": "Zorin OS",
+            "pop": "Pop!_OS",
+        }
 
-    def _start_sync(self):
-        if not self._target_drive:
-            self.syncProgress.emit("Sync Error: No drive selected.")
-            QMessageBox.warning(self, "Sync Error", "No drive selected.")
-            return
+        for key, name in distros.items():
+            if key in filename:
+                return name
 
-        if self._sync_worker and self._sync_worker.isRunning():
-            self.syncProgress.emit("Sync Info: Sync already in progress.")
-            return
+        return "Linux"
 
-        self.sync_button.setEnabled(False)
-        self.syncProgress.emit(f"Starting sync via Sync Tool for: {self._target_drive}")
-        self.syncProgress.emit(f"Checking device busy status: {self._target_drive}")
-
-        self._sync_worker = SyncWorker(self._target_drive)
-        self._sync_worker.progress.connect(self.syncProgress)  # Relay progress
-        self._sync_worker.finished.connect(self._on_sync_finished)
-        # Clean up worker thread when finished
-        self._sync_worker.finished.connect(self._sync_worker.deleteLater)
-        self._sync_worker.start()
-
-    def _on_sync_finished(self, success):
-        final_message = ""
-        if success:
-            final_message = (
-                f"--- Sync completed successfully for {self._target_drive} ---"
-            )
-            self.syncProgress.emit(final_message)
-        else:
-            final_message = f"--- Sync encountered errors for {self._target_drive} ---"
-            self.syncProgress.emit(final_message)
-
-        self.syncFinished.emit(success, final_message)
-
-        # Re-enable button if a drive is still selected
-        self.sync_button.setEnabled(bool(self._target_drive))
-        self._sync_worker = None  # Clear worker reference
-
-    def closeEvent(self, event):
-        # We just hide it instead of closing, so it can be reopened easily
-        self.hide()
-        event.ignore()  # Ignore the close event, effectively hiding the window
-
-
-class WindowsWorker(QThread):
-    progress = Signal(str)
-    finished = Signal(bool)
-
-    def __init__(self, steps, parent=None):
-        super().__init__(parent)
-        self.steps = steps
-
-    def run(self):
-        script_lines = [
-            "set -e",
-            # Unmount and clean up any previous mounts or folders
-            "for mnt in /mnt/justdd_iso /mnt/justdd_vfat /mnt/justdd_ntfs; do",
-            '  if mountpoint -q "$mnt"; then',
-            '    umount "$mnt" || true',
-            "  fi",
-            '  rm -rf "$mnt"',
-            "done",
-            # Check if ISO is already mounted at /mnt/justdd_iso
-            'if mount | grep -q "/mnt/justdd_iso"; then',
-            "  umount /mnt/justdd_iso || true",
-            "fi",
-        ]
-        for idx, (desc, cmd) in enumerate(self.steps, 1):
-            script_lines.append(f'echo "Step {idx}/{len(self.steps)}: {desc}"')
-            script_lines.append(f'echo "Running: {" ".join(cmd)}"')
-            script_lines.append(
-                " ".join(f'"{c}"' if " " in c or c.startswith("-") else c for c in cmd)
-            )
-        script_content = "\n".join(script_lines)
-        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".sh") as tf:
-            tf.write(script_content)
-            script_path = tf.name
+    @staticmethod
+    def _examine_iso_contents(iso_path):
+        # Examine ISO contents using isoinfo if available
         try:
-            os.chmod(script_path, 0o700)
-            proc = subprocess.Popen(
-                ["pkexec", "bash", script_path],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+            result = subprocess.run(
+                ["isoinfo", "-d", "-i", iso_path],
+                capture_output=True,
                 text=True,
+                timeout=10,
             )
-            for line in proc.stdout:
-                self.progress.emit(line.rstrip())
-            proc.wait()
-            if proc.returncode == 0:
-                self.finished.emit(True)
-            else:
-                self.progress.emit(f"Script exited with code {proc.returncode}")
-                self.finished.emit(False)
-        except Exception as e:
-            self.progress.emit(f"Exception: {e}")
-            self.finished.emit(False)
-        finally:
-            os.unlink(script_path)
+
+            if result.returncode == 0:
+                output = result.stdout.lower()
+
+                if "microsoft" in output or "windows" in output:
+                    return ("windows", {"name": "Windows (ISO analysis)"})
+
+                if any(
+                    term in output for term in ["linux", "ubuntu", "debian", "fedora"]
+                ):
+                    return ("linux", {"name": "Linux (ISO analysis)"})
+
+            result = subprocess.run(
+                ["isoinfo", "-l", "-i", iso_path],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+            if result.returncode == 0:
+                file_list = result.stdout.lower()
+
+                windows_files = [
+                    "setup.exe",
+                    "autorun.inf",
+                    "bootmgr",
+                    "sources/install.wim",
+                ]
+                if any(wfile in file_list for wfile in windows_files):
+                    return ("windows", {"name": "Windows (file analysis)"})
+
+                linux_files = ["vmlinuz", "initrd", "casper/", "live/", "isolinux/"]
+                if any(lfile in file_list for lfile in linux_files):
+                    return ("linux", {"name": "Linux (file analysis)"})
+
+        except:
+            pass
+
+        return ("unknown", {})
 
 
-class DDApp(QWidget):
-    def __init__(self):
+class FlashWorker(QThread):
+    progress = Signal(int)
+    status_update = Signal(str)
+    log_message = Signal(str)
+    finished = Signal(bool, str)
+
+    def __init__(self, iso_path, target_drive, mode="linux"):
         super().__init__()
-        # Enable floating behavior in tiling window managers by making this a dialog that stays on top
-        flags = self.windowFlags()
-        flags |= (
-            Qt.WindowType.Dialog
-            | Qt.WindowStaysOnTopHint
-            #| Qt.WindowType.X11BypassWindowManagerHint
-        )
-        self.setWindowFlags(flags)
-        # Initialize attributes before any method calls
-        self.iso_path = ""
-        self.target_drive = ""
-        self.drive_info = {}
-        self.iso_path_win = ""
-        self.target_drive_win = ""
-        self.drive_info_win = {}
-        self.setWindowTitle("JustDD - USB Image Writer (1.2)")
+        self.iso_path = iso_path
+        self.target_drive = target_drive
+        self.mode = mode
+        self._process = None
 
-        main_layout = QVBoxLayout(self)
-        tabs = QTabWidget()
-        main_layout.addWidget(tabs)
-
-        # --- Linux ISO Tab ---
-        linux_tab = QWidget()
-        linux_layout = QVBoxLayout(linux_tab)
-        # ISO selection
-        linux_iso_form = QFormLayout()
-        self.iso_edit = QLineEdit()
-        self.iso_edit.setReadOnly(True)
-        self.iso_edit.setPlaceholderText("Select an ISO file...")
-        self.iso_browse_button = QPushButton("Browse...")
-        self.iso_browse_button.setToolTip("Click to select the ISO image file.")
-        self.iso_browse_button.clicked.connect(self.browse_iso)
-        iso_browse_layout = QHBoxLayout()
-        iso_browse_layout.addWidget(self.iso_edit)
-        iso_browse_layout.addWidget(self.iso_browse_button)
-        linux_iso_form.addRow("ISO File:", iso_browse_layout)
-        linux_layout.addLayout(linux_iso_form)
-        # Drive selection
-        linux_drive_form = QFormLayout()
-        self.drive_combo = QComboBox()
-        self.drive_combo.setToolTip("Select the target USB drive.")
-        self.refresh_drives_button = QPushButton("Refresh")
-        self.refresh_drives_button.setToolTip("Rescan for available drives.")
-        self.refresh_drives_button.clicked.connect(self.refresh_drives)
-        self.open_sync_button = QPushButton("Sync Tool")
-        self.open_sync_button.setToolTip(
-            "Open a separate tool to manually sync drive buffers."
-        )
-        self.open_sync_button.clicked.connect(self.open_sync_widget)
-        self.open_sync_button.setEnabled(False)  # Disabled until a drive is selected
-        drive_select_layout = QHBoxLayout()
-        drive_select_layout.addWidget(self.drive_combo, 1)
-        drive_select_layout.addWidget(self.refresh_drives_button)
-        drive_select_layout.addWidget(self.open_sync_button)
-        linux_drive_form.addRow("Target Drive:", drive_select_layout)
-        linux_layout.addLayout(linux_drive_form)
-        # Write button
-        self.write_button = QPushButton("Write to Drive")
-        self.write_button.setToolTip(
-            "Start writing the selected ISO to the selected drive (requires confirmation)."
-        )
-        self.write_button.clicked.connect(self.confirm_write)
-        self.write_button.setEnabled(False)
-        linux_layout.addWidget(self.write_button)
-        # Status Area
-        self.status_label = QLabel("Status / Output:")
-        self.status_output = QTextEdit()
-        self.status_output.setReadOnly(True)
-        self.status_output.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        linux_layout.addWidget(self.status_label)
-        linux_layout.addWidget(self.status_output, 1)
-
-        tabs.addTab(linux_tab, "Linux ISO")
-
-        # --- Windows ISO Tab ---
-        windows_tab = QWidget()
-        windows_layout = QVBoxLayout(windows_tab)
-        # ISO selection for Windows
-        win_iso_form = QFormLayout()
-        self.iso_edit_win = QLineEdit()
-        self.iso_edit_win.setReadOnly(True)
-        self.iso_edit_win.setPlaceholderText("Select a Windows ISO...")
-        self.iso_browse_button_win = QPushButton("Browse...")
-        self.iso_browse_button_win.setToolTip("Select Windows ISO file.")
-        self.iso_browse_button_win.clicked.connect(self.browse_iso_win)
-        win_iso_layout = QHBoxLayout()
-        win_iso_layout.addWidget(self.iso_edit_win)
-        win_iso_layout.addWidget(self.iso_browse_button_win)
-        win_iso_form.addRow("Windows ISO:", win_iso_layout)
-        windows_layout.addLayout(win_iso_form)
-        # Drive selection for Windows
-        win_drive_form = QFormLayout()
-        self.drive_combo_win = QComboBox()
-        self.drive_combo_win.setToolTip(
-            "Select target USB drive for Windows installation."
-        )
-        self.refresh_drives_button_win = QPushButton("Refresh")
-        self.refresh_drives_button_win.setToolTip("Rescan for drives.")
-        self.refresh_drives_button_win.clicked.connect(self.refresh_drives_win)
-        win_drive_layout = QHBoxLayout()
-        win_drive_layout.addWidget(self.drive_combo_win, 1)
-        win_drive_layout.addWidget(self.refresh_drives_button_win)
-        win_drive_form.addRow("Target Drive:", win_drive_layout)
-        windows_layout.addLayout(win_drive_form)
-        # Write button and status for Windows
-        self.write_button_win = QPushButton("Prepare USB")
-        self.write_button_win.setToolTip(
-            "Format and copy Windows files to make bootable USB."
-        )
-        self.write_button_win.clicked.connect(self.confirm_write_windows)
-        self.write_button_win.setEnabled(False)
-        windows_layout.addWidget(self.write_button_win)
-        self.status_label_win = QLabel("Status / Output:")
-        self.status_output_win = QTextEdit()
-        self.status_output_win.setReadOnly(True)
-        self.status_output_win.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
-        windows_layout.addWidget(self.status_label_win)
-        windows_layout.addWidget(self.status_output_win, 1)
-        tabs.addTab(windows_tab, "Windows ISO")
-
-        # --- About Tab ---
-        about_tab = QWidget()
-        about_layout = QVBoxLayout(about_tab)
-        icon_label = QLabel()
-        icon_path = resource_path("images/icon.png")
-        if os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path)
-            if not pixmap.isNull():
-                icon_label.setPixmap(
-                    pixmap.scaled(256, 256, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                )
-            else:
-                print(f"Failed to load pixmap from: {icon_path}")
-            icon_label.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            about_layout.addWidget(icon_label)
-        else:
-            print(f"Icon not found at: {icon_path}")
-
-        about_label = QLabel(
-            "<b>JustDD - USB Image Writer</b><br>"
-            "Version 1.2<br><br>"
-            "A simple, open-source tool to write Linux and Windows ISO images to USB drives.\n"
-            "Supports manual sync, drive selection, and Windows USB preparation.<br><br>"
-            "Author: xxanqw<br>"
-            "License: GPLv3<br>"
-            "<br>For more information, visit the GitHub page."
-        )
-        about_label.setWordWrap(True)
-        about_label.setTextFormat(Qt.TextFormat.RichText)
-        about_layout.addWidget(about_label)
-        github_button = QPushButton("Visit GitHub")
-        github_button.clicked.connect(
-            lambda: os.system('xdg-open "https://github.com/xxanqw/justdd"')
-        )
-        about_layout.addWidget(github_button)
-        about_layout.addStretch()
-        tabs.addTab(about_tab, "About")
-
-        # --- Create Sync Widget instance (AFTER status_output is defined) ---
-        self.sync_widget = SyncWidget()
-        # Connect its progress signal to the main status output (now safe)
-        self.sync_widget.syncProgress.connect(self.status_output.append)
-
-        # --- Create ISO Downloader Widget (floating, like SyncWidget) ---
-        self.iso_downloader_widget = IsoDownloaderWidget()
-
-        # --- Add button at the bottom to open ISO Downloader ---
-        bottom_button_layout = QHBoxLayout()
-        bottom_button_layout.addStretch()
-        self.open_iso_downloader_button = QPushButton("ISO Downloader")
-        self.open_iso_downloader_button.setToolTip("Open a tool to download Linux ISOs.")
-        self.open_iso_downloader_button.clicked.connect(self.open_iso_downloader_widget)
-        bottom_button_layout.addWidget(self.open_iso_downloader_button)
-        main_layout.addLayout(bottom_button_layout)
-
-        # Initial drive scans and connections
-        self.refresh_drives()  # linux drives
-        self.drive_combo.currentIndexChanged.connect(
-            self.update_write_button_state
-        )  # Connect drive change
-        self.refresh_drives_win()  # windows drives
-        self.drive_combo_win.currentIndexChanged.connect(
-            self.update_write_button_state_win
-        )
-
-    def browse_iso(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select ISO File", "", "ISO Files (*.iso);;All Files (*)"
-        )
-        if file_path:
-            self.iso_path = file_path
-            self.iso_edit.setText(file_path)
-            self.update_write_button_state()
-            self.status_output.append(f"Selected ISO: {self.iso_path}")
-
-    def browse_iso_win(self):
-        file_path, _ = QFileDialog.getOpenFileName(
-            self, "Select Windows ISO File", "", "ISO Files (*.iso);;All Files (*)"
-        )
-        if file_path:
-            self.iso_path_win = file_path
-            self.iso_edit_win.setText(file_path)
-            self.update_write_button_state_win()
-            self.status_output_win.append(f"Selected Windows ISO: {self.iso_path_win}")
-
-    def refresh_drives(self):
-        current_selection = self.drive_combo.currentText()
-        self.status_output.append("Refreshing drive list...")
-        self.drive_combo.clear()
-        # --- Drive Listing Logic (Linux tab) ---
+    def run(self):
         try:
-            # Using lsblk to find removable block devices (like USB drives)
-            # -d: list devices without partitions
-            # -n: no header
-            # -o NAME,RM,TYPE,SIZE,MOUNTPOINT: output relevant info
-            # We filter for RM=1 (removable) and TYPE=disk
-            result = subprocess.run(
-                ["lsblk", "-dno", "NAME,RM,TYPE,SIZE,MOUNTPOINT"],
-                capture_output=True,
-                text=True,
-                check=True,
-                timeout=5,
-            )
-            drives = []
-            drive_info = {}
-            for line in result.stdout.strip().split("\n"):
-                parts = line.split()
-                name = parts[0]
-                rm = parts[1]
-                type = parts[2]
-                size = parts[3]
-                mountpoint = parts[4] if len(parts) > 4 else "[Not mounted]"
-
-                if rm == "1" and type == "disk":
-                    device_path = f"/dev/{name}"
-                    display_text = f"{device_path} ({size}) - {mountpoint}"
-                    drives.append(display_text)
-                    drive_info[display_text] = device_path  # Store mapping
-
-            if drives:
-                self.drive_combo.addItems(drives)
-                self.drive_info = drive_info  # Store the info map
-                # Try to restore previous selection if still present
-                if current_selection in drive_info:
-                    self.drive_combo.setCurrentText(current_selection)
-                self.status_output.append(
-                    f"Found drives: {', '.join(drive_info.values())}"
-                )
+            if self.mode == "windows":
+                self._flash_windows()
             else:
-                self.status_output.append("No suitable removable drives found.")
-                self.drive_info = {}
-        except FileNotFoundError:
-            self.status_output.append(
-                "Error: 'lsblk' command not found. Cannot list drives."
-            )
-            self.drive_info = {}
-        except subprocess.TimeoutExpired:
-            self.status_output.append("Error: 'lsblk' command timed out.")
-            self.drive_info = {}
-        except subprocess.CalledProcessError as e:
-            self.status_output.append(f"Error listing drives: {e}\n{e.stderr}")
-            self.drive_info = {}
+                self._flash_linux()
         except Exception as e:
-            self.status_output.append(
-                f"An unexpected error occurred while listing drives: {e}"
+            if not self.isInterruptionRequested():
+                self.log_message.emit(f"Error: {str(e)}")
+                self.finished.emit(False, f"Flash failed: {str(e)}")
+        finally:
+            if self._process:
+                try:
+                    self._process.terminate()
+                    self._process.wait(timeout=3)
+                except:
+                    pass
+                self._process = None
+
+    def _flash_linux(self):
+        self.status_update.emit("Preparing to flash...")
+        self.log_message.emit(f"Starting Linux flash process")
+        self.log_message.emit(f"ISO: {self.iso_path}")
+        self.log_message.emit(f"Target: {self.target_drive}")
+
+        # Get ISO file size for progress calculation
+        try:
+            iso_size = os.path.getsize(self.iso_path)
+            self.log_message.emit(
+                f"ISO size: {iso_size} bytes ({iso_size / (1024**3):.2f} GB)"
             )
-            self.drive_info = {}
+        except Exception as e:
+            self.log_message.emit(f"Could not get ISO size: {e}")
+            iso_size = 0
 
-        self.update_write_button_state()
-        # --- End Drive Listing Logic (Linux) ---
+        self.status_update.emit("Checking device status...")
+        self.progress.emit(5)
+        self.msleep(500)
 
-    def refresh_drives_win(self):
-        current_selection = self.drive_combo_win.currentText()
-        self.status_output_win.append("Refreshing drive list...")
-        self.drive_combo_win.clear()
-        # --- Drive Listing Logic (Windows tab (same but why not)) ---
         try:
             result = subprocess.run(
-                ["lsblk", "-dno", "NAME,RM,TYPE,SIZE,MOUNTPOINT"],
+                ["fuser", "-m", self.target_drive],
                 capture_output=True,
                 text=True,
-                check=True,
-                timeout=5,
+                timeout=3,
             )
-            drives = []
-            drive_info = {}
-            for line in result.stdout.strip().split("\n"):
-                parts = line.split()
-                name = parts[0]
-                rm = parts[1]
-                type = parts[2]
-                size = parts[3]
-                mountpoint = parts[4] if len(parts) > 4 else "[Not mounted]"
-
-                if rm == "1" and type == "disk":
-                    device_path = f"/dev/{name}"
-                    display_text = f"{device_path} ({size}) - {mountpoint}"
-                    drives.append(display_text)
-                    drive_info[display_text] = device_path
-
-            if drives:
-                self.drive_combo_win.addItems(drives)
-                self.drive_info_win = drive_info
-                if current_selection in drive_info:
-                    self.drive_combo_win.setCurrentText(current_selection)
-                self.status_output_win.append(
-                    f"Found drives: {', '.join(drive_info.values())}"
-                )
-            else:
-                self.status_output_win.append("No suitable removable drives found.")
-                self.drive_info_win = {}
-        except FileNotFoundError:
-            self.status_output_win.append(
-                "Error: 'lsblk' command not found. Cannot list drives."
-            )
-            self.drive_info_win = {}
+            if result.returncode == 0 and result.stdout.strip():
+                self.log_message.emit(f"Device busy - PIDs: {result.stdout.strip()}")
+                self.finished.emit(False, "Device is busy or mounted")
+                return
         except subprocess.TimeoutExpired:
-            self.status_output_win.append("Error: 'lsblk' command timed out.")
-            self.drive_info_win = {}
-        except subprocess.CalledProcessError as e:
-            self.status_output_win.append(f"Error listing drives: {e}\n{e.stderr}")
-            self.drive_info_win = {}
+            self.log_message.emit("fuser check timed out, proceeding...")
+        except FileNotFoundError:
+            self.log_message.emit("fuser command not found, proceeding...")
         except Exception as e:
-            self.status_output_win.append(
-                f"An unexpected error occurred while listing drives: {e}"
-            )
-            self.drive_info_win = {}
+            self.log_message.emit(f"fuser check failed: {e}, proceeding...")
 
-        self.update_write_button_state_win()
-        # --- End Drive Listing Logic (Windows) ---
+        self.progress.emit(10)
+        self.status_update.emit("Starting dd operation...")
 
-    def update_write_button_state(self):
-        selected_drive_display = self.drive_combo.currentText()
-        # Get the actual device path from the display text
-        self.target_drive = self.drive_info.get(selected_drive_display, "")
-
-        # Enable/disable Write button
-        can_write = bool(self.iso_path and self.target_drive)
-        self.write_button.setEnabled(can_write)
-
-        # Enable/disable Sync Tool button
-        can_sync = bool(self.target_drive)
-        self.open_sync_button.setEnabled(can_sync)
-
-        # Update the SyncWidget with the selected drive (even if hidden)
-        self.sync_widget.setTargetDrive(self.target_drive)
-
-    def update_write_button_state_win(self):
-        selected_drive_display = self.drive_combo_win.currentText()
-        # Get the actual device path from the display text
-        self.target_drive_win = self.drive_info_win.get(selected_drive_display, "")
-
-        if self.iso_path_win and self.target_drive_win:
-            self.write_button_win.setEnabled(True)
-        else:
-            self.write_button_win.setEnabled(False)
-
-    def confirm_write(self):
-        # Ensure target_drive is updated based on current selection
-        selected_drive_display = self.drive_combo.currentText()
-        self.target_drive = self.drive_info.get(selected_drive_display, "")
-
-        if not self.iso_path or not self.target_drive:
-            QMessageBox.warning(
-                self,
-                "Missing Information",
-                "Please select both an ISO file and a target drive.",
-            )
-            return
-
-        # Double-check the drive path looks reasonable (basic check)
-        if not self.target_drive.startswith("/dev/"):
-            QMessageBox.critical(
-                self, "Error", f"Invalid target drive path derived: {self.target_drive}"
-            )
-            return
-
-        reply = QMessageBox.warning(
-            self,
-            "Confirm Write Operation",
-            f"<font color='red'><b>WARNING:</b></font> This will <b>DESTROY ALL DATA</b> on <font color='blue'>{self.target_drive}</font> ({selected_drive_display.split('(')[-1].split(')')[0]}).<br><br>"
-            f"Are you absolutely sure you want to write<br>'{os.path.basename(self.iso_path)}'<br>"
-            f"to<br>'{self.target_drive}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            self.write_image()
-
-    def confirm_write_windows(self):
-        # Ensure target_drive_win is updated based on current selection
-        selected_drive_display = self.drive_combo_win.currentText()
-        self.target_drive_win = self.drive_info_win.get(selected_drive_display, "")
-
-        if not self.iso_path_win or not self.target_drive_win:
-            QMessageBox.warning(
-                self,
-                "Missing Information",
-                "Please select both a Windows ISO file and a target drive.",
-            )
-            return
-
-        # Double-check the drive path looks reasonable (basic check)
-        if not self.target_drive_win.startswith("/dev/"):
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Invalid target drive path derived: {self.target_drive_win}",
-            )
-            return
-
-        reply = QMessageBox.warning(
-            self,
-            "Confirm Write Operation",
-            f"<font color='red'><b>WARNING:</b></font> This will <b>DESTROY ALL DATA</b> on <font color='blue'>{self.target_drive_win}</font> ({selected_drive_display.split('(')[-1].split(')')[0]}).<br><br>"
-            f"Are you absolutely sure you want to write<br>'{os.path.basename(self.iso_path_win)}'<br>"
-            f"to<br>'{self.target_drive_win}'?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-
-        if reply == QMessageBox.StandardButton.Yes:
-            self.write_image_windows()
-
-    def write_image(self):
-        self.status_output.clear()
-        self.status_output.append(f"Starting write process...")
-        self.status_output.append(f"ISO: {self.iso_path}")
-        self.status_output.append(f"Drive: {self.target_drive}")
-        self.status_output.append("--- DD Command Output ---")
-
-        self.write_button.setEnabled(False)
-        self.refresh_drives_button.setEnabled(False)
-        self.iso_browse_button.setEnabled(False)
-        self.drive_combo.setEnabled(False)
-        self.open_sync_button.setEnabled(False)
-        tab_widget = self.findChild(QTabWidget)
-        if tab_widget:
-            tab_widget.tabBar().setEnabled(False)
-
-        # --- DD Execution Logic ---
-        # Using pkexec.
-        # Using QProcess for better integration (non-blocking).
-
-        # Create QProcess instance and connect signals
-        self.process = QProcess(self)
-        self.process.readyReadStandardOutput.connect(self.handle_stdout)
-        self.process.readyReadStandardError.connect(self.handle_stderr)
-        self.process.finished.connect(self.process_finished)
-
-        # Use pkexec to run dd as root
-        command = "pkexec"
-        args = [
+        cmd = [
+            "pkexec",
             "dd",
             f"if={self.iso_path}",
             f"of={self.target_drive}",
@@ -739,34 +314,139 @@ class DDApp(QWidget):
             "status=progress",
             "oflag=sync",
         ]
-        self.status_output.append(f"Executing: pkexec {' '.join(args)}")
-        self.process.start(command, args)
 
-    # Windows-specific function to handle the write process
-    def write_image_windows(self):
-        self.status_output_win.clear()
-        self._set_windows_ui_enabled(False)
-        tab_widget = self.findChild(QTabWidget)
-        if tab_widget:
-            tab_widget.tabBar().setEnabled(False)
-        self.findChild(QTabWidget).setEnabled(False)
-        # Disable all tabs while writing
-        drive = self.target_drive_win
+        self.log_message.emit(f"Command: {' '.join(cmd)}")
+
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+            )
+
+            progress_value = 10
+            while True:
+                if self.isInterruptionRequested():
+                    process.terminate()
+                    process.wait()
+                    self.log_message.emit("Flash operation cancelled")
+                    return
+
+                output = process.stdout.readline()
+                if output:
+                    self.log_message.emit(output.strip())
+
+                    # Parse dd progress output to calculate percentage
+                    if "bytes" in output.lower() and iso_size > 0:
+                        try:
+                            # Extract bytes copied from dd output
+                            # Format is usually like: "1073741824 bytes (1.1 GB, 1.0 GiB) copied"
+                            match = re.search(r"(\d+)\s+bytes", output)
+                            if match:
+                                bytes_copied = int(match.group(1))
+                                # Calculate percentage between 10% and 90%
+                                percentage = (bytes_copied / iso_size) * 80 + 10
+                                progress_value = min(int(percentage), 90)
+                                self.progress.emit(progress_value)
+
+                                # Update status with transfer rate and progress
+                                if "copied" in output.lower():
+                                    self.status_update.emit(
+                                        f"Copying... {bytes_copied / (1024**3):.2f} GB / {iso_size / (1024**3):.2f} GB"
+                                    )
+                        except (ValueError, AttributeError):
+                            # Fallback to incremental progress if parsing fails
+                            if "copied" in output.lower():
+                                progress_value = min(progress_value + 2, 90)
+                                self.progress.emit(progress_value)
+                    elif "copied" in output.lower():
+                        # Fallback progress update
+                        progress_value = min(progress_value + 2, 90)
+                        self.progress.emit(progress_value)
+
+                elif process.poll() is not None:
+                    break
+
+                self.msleep(100)
+
+            return_code = process.wait()
+
+            if return_code == 0:
+                self.progress.emit(95)
+                self.status_update.emit("Syncing filesystem...")
+                self.log_message.emit("Running final sync...")
+
+                try:
+                    subprocess.run(["sync"], timeout=30, check=True)
+                    self.msleep(1000)
+                except Exception as e:
+                    self.log_message.emit(f"Sync warning: {e}")
+
+                self.progress.emit(100)
+                self.status_update.emit("Flash completed successfully!")
+                self.finished.emit(True, "Flash completed successfully!")
+            else:
+                self.finished.emit(
+                    False, f"dd command failed with exit code {return_code}"
+                )
+
+        except subprocess.TimeoutExpired:
+            self.finished.emit(False, "Flash operation timed out")
+        except Exception as e:
+            self.finished.emit(False, f"Flash failed: {str(e)}")
+
+    def _flash_windows(self):
+        if self.isInterruptionRequested():
+            return
+
+        self.status_update.emit("Preparing Windows USB...")
+        self.log_message.emit(f"Starting Windows USB preparation")
+        self.log_message.emit(f"ISO: {self.iso_path}")
+        self.log_message.emit(f"Target: {self.target_drive}")
+
+        self.status_update.emit("Checking device status...")
+        self.progress.emit(5)
+
+        try:
+            result = subprocess.run(
+                ["fuser", "-m", self.target_drive],
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                self.log_message.emit(f"Device busy - PIDs: {result.stdout.strip()}")
+                self.finished.emit(False, "Device is busy or mounted")
+                return
+        except:
+            pass
+
+        drive = self.target_drive
         p1, p2 = f"{drive}1", f"{drive}2"
         iso_mount, vfat_mount, ntfs_mount = (
             "/mnt/justdd_iso",
             "/mnt/justdd_vfat",
             "/mnt/justdd_ntfs",
         )
+
         steps = [
-            ("Wipefs", ["wipefs", "-a", drive]),
-            ("Parted mklabel", ["parted", "--script", drive, "mklabel", "gpt"]),
+            ("Wiping filesystem signatures", 10, ["wipefs", "-a", drive]),
             (
-                "Parted mkpart BOOT",
+                "Creating GPT partition table",
+                15,
+                ["parted", "--script", drive, "mklabel", "gpt"],
+            ),
+            (
+                "Creating BOOT partition",
+                20,
                 ["parted", "--script", drive, "mkpart", "BOOT", "fat32", "0%", "1GiB"],
             ),
             (
-                "Parted mkpart INSTALL",
+                "Creating INSTALL partition",
+                25,
                 [
                     "parted",
                     "--script",
@@ -778,14 +458,24 @@ class DDApp(QWidget):
                     "100%",
                 ],
             ),
-            ("mkfs.vfat", ["mkfs.vfat", "-n", "BOOT", p1]),
-            ("mkfs.ntfs", ["mkfs.ntfs", "--quick", "-L", "INSTALL", p2]),
-            ("mkdir ISO mount", ["mkdir", "-p", iso_mount]),
-            ("mount ISO", ["mount", "-o", "loop", self.iso_path_win, iso_mount]),
-            ("mkdir VFAT", ["mkdir", "-p", vfat_mount]),
-            ("mount BOOT", ["mount", p1, vfat_mount]),
+            ("Waiting for partition recognition", 28, ["partprobe", drive]),
+            ("Waiting for devices", 30, ["sleep", "2"]),
+            ("Formatting BOOT partition", 35, ["mkfs.vfat", "-n", "BOOT", p1]),
             (
-                "rsync to BOOT",
+                "Formatting INSTALL partition",
+                40,
+                ["mkfs.ntfs", "--quick", "-L", "INSTALL", p2],
+            ),
+            (
+                "Creating mount directories",
+                45,
+                ["mkdir", "-p", iso_mount, vfat_mount, ntfs_mount],
+            ),
+            ("Mounting ISO", 50, ["mount", "-o", "loop", self.iso_path, iso_mount]),
+            ("Mounting BOOT partition", 55, ["mount", p1, vfat_mount]),
+            (
+                "Copying boot files",
+                60,
                 [
                     "rsync",
                     "-r",
@@ -799,15 +489,20 @@ class DDApp(QWidget):
                     f"{vfat_mount}/",
                 ],
             ),
-            ("mkdir sources", ["mkdir", "-p", f"{vfat_mount}/sources"]),
             (
-                "copy boot.wim",
+                "Creating sources directory",
+                65,
+                ["mkdir", "-p", f"{vfat_mount}/sources"],
+            ),
+            (
+                "Copying boot.wim",
+                70,
                 ["cp", f"{iso_mount}/sources/boot.wim", f"{vfat_mount}/sources/"],
             ),
-            ("mkdir NTFS", ["mkdir", "-p", ntfs_mount]),
-            ("mount INSTALL", ["mount", p2, ntfs_mount]),
+            ("Mounting INSTALL partition", 75, ["mount", p2, ntfs_mount]),
             (
-                "rsync to INSTALL (this is a VERY LONG process, output can be broken)",
+                "Copying Windows files (this takes a long time)",
+                80,
                 [
                     "rsync",
                     "-r",
@@ -819,251 +514,1620 @@ class DDApp(QWidget):
                     f"{ntfs_mount}/",
                 ],
             ),
+            ("Unmounting INSTALL partition", 90, ["umount", ntfs_mount]),
+            ("Unmounting BOOT partition", 95, ["umount", vfat_mount]),
+            ("Unmounting ISO", 97, ["umount", iso_mount]),
+            ("Syncing filesystem", 99, ["sync"]),
             (
-                "umount INSTALL (this step is even longer than previous, just give it time)",
-                ["umount", ntfs_mount],
-            ),
-            ("umount BOOT", ["umount", vfat_mount]),
-            ("umount ISO", ["umount", iso_mount]),
-            ("sync buffers", ["sync"]),
-            (
-                "remove dirs (if it fails, do it yourself)",
+                "Cleaning up mount directories",
+                100,
                 ["rmdir", iso_mount, vfat_mount, ntfs_mount],
             ),
         ]
-        self.windows_worker = WindowsWorker(steps)
-        self.windows_worker.progress.connect(self.status_output_win.append)
-        self.windows_worker.finished.connect(self._on_windows_done)
-        self.windows_worker.start()
 
-    def _on_windows_done(self, success):
-        if success:
-            self.status_output_win.append("--- Windows USB preparation complete ---")
-            QMessageBox.information(
-                self, "Success", "Windows USB drive prepared successfully."
+        try:
+            script_lines = [
+                "#!/bin/bash",
+                "set -e",
+                "",
+                "# Function to check for interruption",
+                "check_interruption() {",
+                '    if [ -f "/tmp/justdd_cancel_$$" ]; then',
+                '        echo "Operation cancelled by user"',
+                "        exit 130",
+                "    fi",
+                "}",
+                "",
+                "# Function to safely unmount",
+                "safe_unmount() {",
+                '    local mount_point="$1"',
+                '    if mountpoint -q "$mount_point" 2>/dev/null; then',
+                '        echo "Unmounting $mount_point"',
+                '        umount "$mount_point" 2>/dev/null || umount -l "$mount_point" 2>/dev/null || true',
+                "    fi",
+                "}",
+                "",
+                "# Function to unmount device partitions",
+                "unmount_device_partitions() {",
+                '    local device="$1"',
+                '    echo "Unmounting all partitions on $device"',
+                "    # Get all mounted partitions for this device",
+                "    mount | grep \"^$device\" | awk '{print $1}' | while read partition; do",
+                '        if [ -n "$partition" ]; then',
+                '            echo "Unmounting partition: $partition"',
+                '            umount "$partition" 2>/dev/null || umount -l "$partition" 2>/dev/null || true',
+                "        fi",
+                "    done",
+                "    # Also try to unmount by device pattern",
+                f"    for part in {drive}*; do",
+                f'        if [ "$part" != "{drive}" ] && mountpoint -q "$part" 2>/dev/null; then',
+                '            echo "Force unmounting: $part"',
+                '            umount "$part" 2>/dev/null || umount -l "$part" 2>/dev/null || true',
+                "        fi",
+                "    done",
+                "    sync",
+                "    sleep 1",
+                "}",
+                "",
+                "# Function to kill processes using device",
+                "kill_device_processes() {",
+                '    local device="$1"',
+                '    echo "Checking for processes using $device"',
+                "    # Try fuser first",
+                "    if command -v fuser >/dev/null 2>&1; then",
+                f'        fuser -km "{drive}" 2>/dev/null || true',
+                f'        fuser -km "{drive}"* 2>/dev/null || true',
+                "    fi",
+                "    # Try lsof as backup",
+                "    if command -v lsof >/dev/null 2>&1; then",
+                f'        lsof "{drive}"* 2>/dev/null | awk "NR>1 {{print \\$2}}" | xargs -r kill -9 2>/dev/null || true',
+                "    fi",
+                "    sleep 2",
+                "}",
+                "",
+                "# Function to retry wipefs",
+                "retry_wipefs() {",
+                '    local device="$1"',
+                "    local max_attempts=3",
+                "    local attempt=1",
+                "    ",
+                "    while [ $attempt -le $max_attempts ]; do",
+                '        echo "Wipefs attempt $attempt/$max_attempts"',
+                "        ",
+                "        # First unmount all partitions",
+                '        unmount_device_partitions "$device"',
+                "        ",
+                "        # Kill processes using the device",
+                '        kill_device_processes "$device"',
+                "        ",
+                "        # Try wipefs",
+                '        if wipefs -a "$device" 2>/dev/null; then',
+                '            echo "Wipefs successful"',
+                "            return 0",
+                "        else",
+                '            echo "Wipefs failed on attempt $attempt"',
+                "            if [ $attempt -lt $max_attempts ]; then",
+                '                echo "Retrying in 2 seconds..."',
+                "                sleep 2",
+                "            fi",
+                "            attempt=$((attempt + 1))",
+                "        fi",
+                "    done",
+                "    ",
+                '    echo "All wipefs attempts failed, trying force method..."',
+                '    unmount_device_partitions "$device"',
+                '    kill_device_processes "$device"',
+                '    dd if=/dev/zero of="$device" bs=1M count=10 2>/dev/null || true',
+                "    sync",
+                "    sleep 1",
+                "}",
+                "",
+                "# Cleanup function",
+                "cleanup() {",
+                '    echo "Performing cleanup..."',
+                "    for mnt in /mnt/justdd_iso /mnt/justdd_vfat /mnt/justdd_ntfs; do",
+                '        safe_unmount "$mnt"',
+                '        rm -rf "$mnt" 2>/dev/null || true',
+                "    done",
+                "}",
+                "",
+                "# Set trap for cleanup on exit",
+                "trap cleanup EXIT",
+                "",
+                "# Initial cleanup",
+                "cleanup",
+                "",
+                f"# Initial device preparation for {drive}",
+                f'echo "Preparing device {drive}"',
+                "",
+                "# Step 1: Unmount all partitions on the device",
+                f'unmount_device_partitions "{drive}"',
+                "",
+                "# Step 2: Kill any remaining processes",
+                f'kill_device_processes "{drive}"',
+                "",
+                "# Step 3: Wait for everything to settle",
+                "sleep 3",
+                "",
+                "# Now execute the actual Windows USB creation steps",
+                "",
+            ]
+
+            for idx, (desc, progress_val, cmd) in enumerate(steps, 1):
+                script_lines.append(f'echo "Step {idx}/{len(steps)}: {desc}"')
+                script_lines.append("check_interruption")
+
+                if cmd[0] == "wipefs":
+                    script_lines.append(f'retry_wipefs "{drive}"')
+                else:
+                    script_lines.append(f'echo "Running: {" ".join(cmd)}"')
+                    quoted_cmd = []
+                    for arg in cmd:
+                        if " " in arg or any(
+                            char in arg for char in ["$", "`", '"', "'"]
+                        ):
+                            quoted_cmd.append(f'"{arg}"')
+                        else:
+                            quoted_cmd.append(arg)
+                    script_lines.append(" ".join(quoted_cmd))
+
+                script_lines.append("")
+
+            script_lines.extend(
+                [
+                    'echo "Windows USB creation completed successfully!"',
+                    'echo "The USB drive is ready for use."',
+                ]
             )
-        else:
-            self.status_output_win.append("--- Windows USB preparation failed ---")
-        # Re-enable UI
-        self._set_windows_ui_enabled(True)
-        tab_widget = self.findChild(QTabWidget)
-        if tab_widget:
-            tab_widget.tabBar().setEnabled(True)
-        self.findChild(QTabWidget).setEnabled(True)
 
-    def _set_windows_ui_enabled(self, enabled: bool):
-        """Enable or disable Windows ISO tab controls."""
-        self.write_button_win.setEnabled(enabled)
-        self.refresh_drives_button_win.setEnabled(enabled)
-        self.iso_browse_button_win.setEnabled(enabled)
-        self.drive_combo_win.setEnabled(enabled)
+            script_content = "\n".join(script_lines)
 
-    def handle_stdout(self):
-        data = self.process.readAllStandardOutput().data().decode()
-        self.handle_stdout_data(data)
+            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".sh") as tf:
+                tf.write(script_content)
+                script_path = tf.name
 
-    def handle_stdout_data(self, data):
-        # Append stdout data, ensuring it ends with a newline for clarity
-        text = data.strip()
-        if text:
-            self.status_output.append(text)
-            self.status_output.verticalScrollBar().setValue(
-                self.status_output.verticalScrollBar().maximum()
-            )  # Scroll to bottom
+            try:
+                os.chmod(script_path, 0o700)
+                self.log_message.emit(
+                    f"Created Windows USB preparation script: {script_path}"
+                )
 
-    def handle_stderr(self):
-        data = self.process.readAllStandardError().data().decode()
-        self.handle_stderr_data(data)
+                cancel_file = f"/tmp/justdd_cancel_{os.getpid()}"
 
-    def handle_stderr_data(self, data):
-        # dd often prints progress to stderr, handle it specially
-        # Try to update the last line if it looks like progress
-        lines = data.strip().split("\r")  # dd progress uses carriage return
-        last_line = lines[-1]
-        current_text = self.status_output.toPlainText()
-        lines_in_widget = current_text.split("\n")
+                self._process = subprocess.Popen(
+                    ["pkexec", "bash", script_path],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True,
+                )
 
-        # Check if the last line in the widget might be previous progress output
-        if lines_in_widget and (
-            "copied" in lines_in_widget[-1] or "records in" in lines_in_widget[-1]
-        ):
-            # Overwrite the last line with new progress
-            cursor = self.status_output.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
-            # Check if the block is the last line before removing
-            cursor.movePosition(
-                QTextCursor.MoveOperation.StartOfBlock, QTextCursor.MoveMode.KeepAnchor
+                while True:
+                    if self.isInterruptionRequested():
+                        try:
+                            with open(cancel_file, "w") as f:
+                                f.write("cancel")
+                        except:
+                            pass
+
+                        self._process.terminate()
+                        self._process.wait(timeout=5)
+                        self.log_message.emit("Windows USB preparation cancelled")
+                        return
+
+                    output = self._process.stdout.readline()
+                    if output:
+                        line = output.strip()
+                        self.log_message.emit(line)
+
+                        if line.startswith("Step "):
+                            try:
+                                step_info = line.split(": ", 1)
+                                if len(step_info) > 1:
+                                    step_num = int(
+                                        step_info[0].split()[1].split("/")[0]
+                                    )
+                                    if step_num <= len(steps):
+                                        progress_val = steps[step_num - 1][1]
+                                        self.progress.emit(progress_val)
+                                        self.status_update.emit(step_info[1])
+                            except (ValueError, IndexError):
+                                pass
+
+                    elif self._process.poll() is not None:
+                        break
+
+                    self.msleep(100)
+
+                try:
+                    os.unlink(cancel_file)
+                except:
+                    pass
+
+                return_code = self._process.wait()
+
+                if return_code == 0:
+                    self.progress.emit(100)
+                    self.status_update.emit("Windows USB preparation completed!")
+                    self.finished.emit(True, "Windows USB created successfully!")
+                elif return_code == 130:
+                    self.log_message.emit("Operation cancelled by user")
+                    return
+                else:
+                    self.finished.emit(
+                        False,
+                        f"Windows USB preparation failed with exit code {return_code}",
+                    )
+
+            except Exception as e:
+                if not self.isInterruptionRequested():
+                    self.log_message.emit(
+                        f"Error executing Windows USB script: {str(e)}"
+                    )
+                    self.finished.emit(
+                        False, f"Windows USB preparation failed: {str(e)}"
+                    )
+            finally:
+                try:
+                    os.unlink(script_path)
+                except:
+                    pass
+                self._process = None
+
+        except Exception as e:
+            if not self.isInterruptionRequested():
+                self.log_message.emit(f"Windows USB preparation failed: {str(e)}")
+                self.finished.emit(False, f"Windows USB preparation failed: {str(e)}")
+
+
+class CompactStepIndicator(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.current_step = 1
+        self.total_steps = 3
+        self.setFixedHeight(25)
+        self.setFixedWidth(120)
+
+    def set_step(self, step):
+        self.current_step = step
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        active_color = QColor("#f9e79f")
+        inactive_color = QColor("#505050")
+        completed_color = QColor("#f9e79f")
+
+        width = self.width()
+        height = self.height()
+
+        step_width = width // self.total_steps
+        circle_radius = 8
+        y_center = height // 2
+
+        for i in range(1, self.total_steps + 1):
+            x_center = (i - 1) * step_width + step_width // 2
+
+            if i < self.current_step:
+                color = completed_color
+            elif i == self.current_step:
+                color = active_color
+            else:
+                color = inactive_color
+
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(
+                x_center - circle_radius,
+                y_center - circle_radius,
+                circle_radius * 2,
+                circle_radius * 2,
             )
-            if cursor.blockNumber() == self.status_output.document().blockCount() - 1:
-                cursor.removeSelectedText()
-                cursor.insertBlock()  # Ensure we are on a new line if needed
-            self.status_output.append(last_line)
-        elif last_line:  # Otherwise, just append
-            self.status_output.append(last_line)
 
-        self.status_output.verticalScrollBar().setValue(
-            self.status_output.verticalScrollBar().maximum()
-        )  # Scroll to bottom
+            if i < self.total_steps:
+                line_color = (
+                    completed_color if i < self.current_step else inactive_color
+                )
+                painter.setPen(line_color)
+                painter.drawLine(
+                    x_center + circle_radius,
+                    y_center,
+                    x_center + step_width - circle_radius,
+                    y_center,
+                )
 
-    def handle_stdout_win(self):
-        data = self.process.readAllStandardOutput().data().decode()
-        self.handle_stdout_data_win(data)
-
-    def handle_stdout_data_win(self, data):
-        # Append stdout data, ensuring it ends with a newline for clarity
-        text = data.strip()
-        if text:
-            self.status_output_win.append(text)
-            self.status_output_win.verticalScrollBar().setValue(
-                self.status_output_win.verticalScrollBar().maximum()
-            )  # Scroll to bottom
-
-    def handle_stderr_win(self):
-        data = self.process.readAllStandardError().data().decode()
-        self.handle_stderr_data_win(data)
-
-    def handle_stderr_data_win(self, data):
-        lines = data.strip().split("\r")
-        last_line = lines[-1]
-        current_text = self.status_output_win.toPlainText()
-        lines_in_widget = current_text.split("\n")
-
-        if lines_in_widget and (
-            "copied" in lines_in_widget[-1] or "records in" in lines_in_widget[-1]
-        ):
-            cursor = self.status_output_win.textCursor()
-            cursor.movePosition(QTextCursor.MoveOperation.End)
-            cursor.select(QTextCursor.SelectionType.BlockUnderCursor)
-            cursor.movePosition(
-                QTextCursor.MoveOperation.StartOfBlock, QTextCursor.MoveMode.KeepAnchor
+            painter.setPen(
+                QColor("#000000") if color != inactive_color else QColor("#ffffff")
             )
-            if (
-                cursor.blockNumber()
-                == self.status_output_win.document().blockCount() - 1
-            ):
-                cursor.removeSelectedText()
-                cursor.insertBlock()
-            self.status_output_win.append(last_line)
-        elif last_line:
-            self.status_output_win.append(last_line)
+            font = painter.font()
+            font.setPointSize(7)
+            painter.setFont(font)
+            if i < self.current_step:
+                painter.drawText(x_center - 4, y_center + 3, "✓")
+            else:
+                painter.drawText(x_center - 3, y_center + 3, str(i))
 
-        self.status_output_win.verticalScrollBar().setValue(
-            self.status_output_win.verticalScrollBar().maximum()
+
+class ISOSelectionPage(QWidget):
+    selection_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.iso_path = None
+        self.iso_type = "unknown"
+        self.iso_details = {}
+        self.setup_ui()
+
+    def setup_ui(self):
+        container = QWidget()
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(60)
+
+        left_widget = QWidget()
+        left_widget.setFixedWidth(200)
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(20)
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        left_layout.addStretch(1)
+
+        icon_label = QLabel("📁")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet(
+            "font-size: 48pt; border: none; background: transparent;"
         )
 
-    def process_finished(self, exit_code=None, exit_status=None):
-        # If called by QProcess signal, get exit code from the process
-        if exit_code is None and self.process:
-            exit_code = self.process.exitCode()
-            exit_status = self.process.exitStatus()
+        title_label = QLabel("Select Image")
+        title_label.setStyleSheet("font-size: 18pt; font-weight: bold; color: #f9e79f;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # --- Placeholder message ---
-        if "Simulating" in self.status_output.toPlainText() and exit_code == 0:
-            self.status_output.append("--- Simulation Complete ---")
-            QMessageBox.information(self, "Simulation", "Simulated write completed.")
-        # --- End Placeholder ---
-        elif exit_status == QProcess.ExitStatus.NormalExit and exit_code == 0:
-            self.status_output.append("--- Write Completed Successfully ---")
-            QMessageBox.information(self, "Success", "ISO image written successfully.")
-        elif exit_status == QProcess.ExitStatus.CrashExit:
-            self.status_output.append(f"--- Write Failed (Process Crashed) ---")
-            QMessageBox.critical(
-                self, "Error", f"Write process crashed. Check status output."
+        left_layout.addWidget(icon_label)
+        left_layout.addWidget(title_label)
+        left_layout.addStretch(1)
+
+        right_widget = QWidget()
+        right_widget.setFixedWidth(450)
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 40, 0, 40)
+        right_layout.setSpacing(25)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        file_frame = QFrame()
+        file_frame.setFixedSize(400, 280)
+        file_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 8px;
+            }
+        """
+        )
+        file_layout = QVBoxLayout(file_frame)
+        file_layout.setContentsMargins(20, 20, 20, 20)
+        file_layout.setSpacing(0)
+
+        self.file_path_label = QLabel("No file selected")
+        self.file_path_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.file_path_label.setStyleSheet(
+            "color: #888888; font-style: italic; font-size: 11pt;"
+        )
+        self.file_path_label.setWordWrap(True)
+        self.file_path_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+
+        self.iso_type_label = QLabel("")
+        self.iso_type_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.iso_type_label.setStyleSheet(
+            "color: #666666; font-size: 9pt; margin-top: 5px;"
+        )
+        self.iso_type_label.setWordWrap(True)
+        self.iso_type_label.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        self.iso_type_label.hide()
+
+        file_layout.addWidget(self.file_path_label, 3)
+        file_layout.addWidget(self.iso_type_label, 1)
+
+        file_layout.addStretch(1)
+
+        browse_button = QPushButton("Browse for Image")
+        browse_button.setProperty("class", "primary")
+        browse_button.clicked.connect(self.browse_file)
+        browse_button.setMinimumHeight(32)
+        browse_button.setMaximumHeight(32)
+
+        file_layout.addWidget(browse_button)
+
+        right_layout.addWidget(file_frame)
+
+        container_layout.addWidget(left_widget)
+        container_layout.addWidget(right_widget)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(50, 0, 50, 50)
+        main_layout.addStretch(1)
+        main_layout.addWidget(container, alignment=Qt.AlignmentFlag.AlignCenter)
+        main_layout.addStretch(1)
+
+    def browse_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select ISO File", "", "ISO Files (*.iso);;All Files (*)"
+        )
+        if file_path:
+            self.iso_path = file_path
+            filename = os.path.basename(file_path)
+
+            self.iso_type, self.iso_details = ISODetector.detect_iso_type(file_path)
+
+            if len(filename) > 35:
+                filename = filename[:32] + "..."
+            self.file_path_label.setText(filename)
+            self.file_path_label.setStyleSheet(
+                "color: #ffffff; font-style: normal; font-size: 11pt; font-weight: bold;"
+            )
+
+            self._update_iso_type_display()
+
+            self.selection_changed.emit()
+
+    def _update_iso_type_display(self):
+        # Update the ISO type display
+        if self.iso_type == "unknown":
+            self.iso_type_label.setText("⚠️ Unknown ISO type")
+            self.iso_type_label.setStyleSheet(
+                "color: #f39c12; font-size: 9pt; margin-top: 5px;"
+            )
+        elif self.iso_type == "linux":
+            distro_name = self.iso_details.get("name", "Linux")
+            size = self.iso_details.get("size", "")
+            self.iso_type_label.setText(f"🐧 {distro_name} • {size}")
+            self.iso_type_label.setStyleSheet(
+                "color: #f9e79f; font-size: 9pt; margin-top: 5px;"
+            )
+        elif self.iso_type == "windows":
+            os_name = self.iso_details.get("name", "Windows")
+            size = self.iso_details.get("size", "")
+            self.iso_type_label.setText(f"🪟 {os_name} • {size}")
+            self.iso_type_label.setStyleSheet(
+                "color: #3498db; font-size: 9pt; margin-top: 5px;"
+            )
+
+        self.iso_type_label.show()
+
+    def get_selected_iso(self):
+        return self.iso_path
+
+    def get_iso_type(self):
+        return self.iso_type
+
+    def get_iso_details(self):
+        return self.iso_details
+
+    def has_valid_selection(self):
+        return self.iso_path is not None
+
+
+class DriveSelectionPage(QWidget):
+    selection_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+        self.refresh_drives()
+
+    def setup_ui(self):
+        container = QWidget()
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(60)
+
+        left_widget = QWidget()
+        left_widget.setFixedWidth(200)
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(20)
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        left_layout.addStretch(1)
+
+        icon_label = QLabel("💾")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet(
+            "font-size: 48pt; border: none; background: transparent;"
+        )
+
+        title_label = QLabel("Select Drive")
+        title_label.setStyleSheet("font-size: 18pt; font-weight: bold; color: #f9e79f;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        left_layout.addWidget(icon_label)
+        left_layout.addWidget(title_label)
+        left_layout.addStretch(1)
+
+        right_widget = QWidget()
+        right_widget.setFixedWidth(450)
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 40, 0, 40)
+        right_layout.setSpacing(20)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        drive_frame = QFrame()
+        drive_frame.setFixedSize(400, 280)
+        drive_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 8px;
+            }
+        """
+        )
+        drive_layout = QVBoxLayout(drive_frame)
+        drive_layout.setContentsMargins(15, 15, 15, 15)
+        drive_layout.setSpacing(10)
+
+        header_layout = QHBoxLayout()
+        header_label = QLabel("Available USB Drives:")
+        header_label.setStyleSheet(
+            "font-size: 12pt; font-weight: bold; color: #ffffff;"
+        )
+
+        refresh_button = QPushButton("🔄 Refresh")
+        refresh_button.setFixedHeight(32)
+        refresh_button.clicked.connect(self.refresh_drives)
+        refresh_button.setToolTip("Refresh drive list")
+
+        header_layout.addWidget(header_label)
+        header_layout.addStretch()
+        header_layout.addWidget(refresh_button)
+
+        self.drive_list = QListWidget()
+        self.drive_list.setFixedHeight(200)
+        self.drive_list.setStyleSheet(
+            """
+            QListWidget {
+                background-color: #1e1e1e;
+                border: 1px solid #404040;
+                border-radius: 6px;
+                padding: 5px;
+                font-size: 11pt;
+            }
+            QListWidget::item {
+                background-color: transparent;
+                border: 1px solid transparent;
+                border-radius: 6px;
+                padding: 12px;
+                margin: 2px;
+                color: #ffffff;
+                min-height: 50px;
+            }
+            QListWidget::item:hover {
+                background-color: #404040;
+                border-color: #505050;
+            }
+            QListWidget::item:selected {
+                background-color: #f9e79f;
+                color: #2c3e50;
+                border-color: #f9e79f;
+                font-weight: bold;
+            }
+        """
+        )
+        self.drive_list.itemSelectionChanged.connect(self.on_drive_selection_changed)
+
+        drive_layout.addLayout(header_layout)
+        drive_layout.addWidget(self.drive_list)
+
+        right_layout.addWidget(drive_frame)
+
+        container_layout.addWidget(left_widget)
+        container_layout.addWidget(right_widget)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(50, 0, 50, 50)
+        main_layout.addStretch(1)
+        main_layout.addWidget(container, alignment=Qt.AlignmentFlag.AlignCenter)
+        main_layout.addStretch(1)
+
+    def refresh_drives(self):
+        self.drive_list.clear()
+
+        try:
+            result = subprocess.run(
+                ["lsblk", "-dno", "NAME,RM,TYPE,SIZE,MOUNTPOINT,LABEL,MODEL"],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=5,
+            )
+
+            drives_found = []
+
+            for line in result.stdout.strip().split("\n"):
+                if not line.strip():
+                    continue
+
+                parts = line.split()
+                if len(parts) >= 4:
+                    name = parts[0]
+                    rm = parts[1]
+                    dtype = parts[2]
+                    size = parts[3]
+                    mountpoint = (
+                        parts[4] if len(parts) > 4 and parts[4] != "" else "Not mounted"
+                    )
+                    label = parts[5] if len(parts) > 5 and parts[5] != "" else ""
+                    model = " ".join(parts[6:]) if len(parts) > 6 else "Unknown Drive"
+
+                    if rm == "1" and dtype == "disk":
+                        device_path = f"/dev/{name}"
+
+                        drive_name = (
+                            model if model != "Unknown Drive" else f"USB Drive ({name})"
+                        )
+                        if label:
+                            drive_name = f"{drive_name} - {label}"
+
+                        drives_found.append(
+                            {
+                                "device_path": device_path,
+                                "name": drive_name,
+                                "size": size,
+                                "mountpoint": mountpoint,
+                                "full_info": f"{device_path} ({size}) - {mountpoint}",
+                            }
+                        )
+
+            if drives_found:
+                for drive in drives_found:
+                    item = QListWidgetItem()
+
+                    primary_text = drive["name"]
+                    secondary_text = f"{drive['device_path']} • {drive['size']} • {drive['mountpoint']}"
+
+                    display_text = f"{primary_text}\n{secondary_text}"
+                    item.setText(display_text)
+
+                    item.setData(Qt.ItemDataRole.UserRole, drive)
+
+                    item.setForeground(QColor("#ffffff"))
+
+                    self.drive_list.addItem(item)
+            else:
+                item = QListWidgetItem("No removable USB drives found")
+                item.setFlags(Qt.ItemFlag.NoItemFlags)
+                item.setForeground(QColor("#888888"))
+                self.drive_list.addItem(item)
+
+        except Exception as e:
+            item = QListWidgetItem(f"Error scanning drives: {str(e)}")
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            item.setForeground(QColor("#e74c3c"))
+            self.drive_list.addItem(item)
+
+        self.selection_changed.emit()
+
+    def on_drive_selection_changed(self):
+        # Handle drive selection changes
+        self.selection_changed.emit()
+
+    def get_selected_drive(self):
+        # Get the currently selected drive info
+        current_item = self.drive_list.currentItem()
+        if current_item:
+            drive_data = current_item.data(Qt.ItemDataRole.UserRole)
+            if drive_data:
+                return drive_data["device_path"], drive_data["full_info"]
+        return None, None
+
+    def has_valid_selection(self):
+        # Check if a valid drive is selected
+        current_item = self.drive_list.currentItem()
+        if current_item:
+            drive_data = current_item.data(Qt.ItemDataRole.UserRole)
+            return drive_data is not None
+        return False
+
+
+class FlashPage(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.iso_path = ""
+        self.drive_path = ""
+        self.drive_display = ""
+        self.iso_type = "unknown"
+        self.iso_details = {}
+        self.flashing = False
+        self.setup_ui()
+
+    def setup_ui(self):
+        container = QWidget()
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(60)
+
+        left_widget = QWidget()
+        left_widget.setFixedWidth(200)
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(20)
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        left_layout.addStretch(1)
+
+        icon_label = QLabel("⚡")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet(
+            "font-size: 48pt; border: none; background: transparent;"
+        )
+
+        title_label = QLabel("Ready to Flash")
+        title_label.setStyleSheet("font-size: 18pt; font-weight: bold; color: #f9e79f;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        left_layout.addWidget(icon_label)
+        left_layout.addWidget(title_label)
+        left_layout.addStretch(1)
+
+        right_widget = QWidget()
+        right_widget.setFixedWidth(450)
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 40, 0, 40)
+        right_layout.setSpacing(20)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.content_container = QWidget()
+        self.content_container.setFixedSize(400, 280)
+        content_widget_layout = QVBoxLayout(self.content_container)
+        content_widget_layout.setContentsMargins(0, 0, 0, 0)
+        content_widget_layout.setSpacing(15)
+
+        summary_frame = QFrame()
+        summary_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 8px;
+            }
+        """
+        )
+        summary_layout = QVBoxLayout(summary_frame)
+        summary_layout.setContentsMargins(20, 15, 20, 15)
+        summary_layout.setSpacing(10)
+
+        summary_title = QLabel("Flash Summary")
+        summary_title.setStyleSheet(
+            "font-size: 14pt; font-weight: bold; color: #ffffff; margin-bottom: 5px; background-color: transparent; border: none;"
+        )
+
+        image_layout = QVBoxLayout()
+        image_layout.setSpacing(5)
+        image_label_title = QLabel("Image:")
+        image_label_title.setStyleSheet(
+            "font-size: 11pt; color: #aaaaaa; background-color: transparent; border: none;"
+        )
+        self.image_label = QLabel("No image selected")
+        self.image_label.setStyleSheet(
+            "font-weight: bold; color: #f9e79f; font-size: 11pt; background-color: transparent; border: none;"
+        )
+        image_layout.addWidget(image_label_title)
+        image_layout.addWidget(self.image_label)
+
+        drive_layout = QVBoxLayout()
+        drive_layout.setSpacing(5)
+        drive_label_title = QLabel("Drive:")
+        drive_label_title.setStyleSheet(
+            "font-size: 11pt; color: #aaaaaa; background-color: transparent; border: none;"
+        )
+        self.drive_label = QLabel("No drive selected")
+        self.drive_label.setStyleSheet(
+            "font-weight: bold; color: #f9e79f; font-size: 11pt; background-color: transparent; border: none;"
+        )
+        drive_layout.addWidget(drive_label_title)
+        drive_layout.addWidget(self.drive_label)
+
+        summary_layout.addWidget(summary_title)
+        summary_layout.addLayout(image_layout)
+        summary_layout.addLayout(drive_layout)
+
+        warning_frame = QFrame()
+        warning_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #3d2a2a;
+                border: 1px solid #e74c3c;
+                border-radius: 8px;
+            }
+        """
+        )
+        warning_layout = QVBoxLayout(warning_frame)
+        warning_layout.setContentsMargins(15, 10, 15, 10)
+        warning_layout.setSpacing(8)
+
+        warning_title = QLabel("⚠️ Warning")
+        warning_title.setStyleSheet(
+            "color: #e74c3c; font-weight: bold; font-size: 13pt; background-color: transparent; border: none;"
+        )
+
+        warning_text = QLabel(
+            "This will completely erase all data on the selected drive. This action cannot be undone."
+        )
+        warning_text.setWordWrap(True)
+        warning_text.setStyleSheet(
+            "color: #e74c3c; font-size: 10pt; line-height: 1.3; background-color: transparent; border: none;"
+        )
+
+        warning_layout.addWidget(warning_title)
+        warning_layout.addWidget(warning_text)
+
+        content_widget_layout.addWidget(summary_frame)
+        content_widget_layout.addWidget(warning_frame)
+
+        self.progress_container = QWidget()
+        self.progress_container.setFixedSize(400, 280)
+        progress_main_layout = QVBoxLayout(self.progress_container)
+        progress_main_layout.setContentsMargins(0, 0, 0, 0)
+        progress_main_layout.setSpacing(0)
+        progress_main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        progress_info_frame = QFrame()
+        progress_info_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 8px;
+            }
+        """
+        )
+        progress_info_layout = QVBoxLayout(progress_info_frame)
+        progress_info_layout.setContentsMargins(30, 40, 30, 40)
+        progress_info_layout.setSpacing(20)
+        progress_info_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        operation_title = QLabel("Flash Operation in Progress")
+        operation_title.setStyleSheet(
+            "font-size: 14pt; font-weight: bold; color: #ffffff; background-color: transparent; border: none;"
+        )
+        operation_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.status_label = QLabel("Preparing to flash...")
+        self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.status_label.setStyleSheet(
+            "font-size: 12pt; color: #f9e79f; font-weight: bold; background-color: transparent; border: none;"
+        )
+        self.status_label.setWordWrap(True)
+
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimum(0)
+        self.progress_bar.setMaximum(100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setMinimumHeight(30)
+        self.progress_bar.setStyleSheet(
+            """
+            QProgressBar {
+                border: 2px solid #404040;
+                border-radius: 8px;
+                text-align: center;
+                background-color: #2d2d2d;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 11pt;
+            }
+            QProgressBar::chunk {
+                background-color: #f9e79f;
+                border-radius: 6px;
+            }
+        """
+        )
+
+        progress_info_layout.addWidget(operation_title)
+        progress_info_layout.addWidget(self.status_label)
+        progress_info_layout.addWidget(self.progress_bar)
+
+        progress_main_layout.addWidget(progress_info_frame)
+
+        self.progress_container.hide()
+
+        right_layout.addWidget(self.content_container)
+        right_layout.addWidget(self.progress_container)
+
+        container_layout.addWidget(left_widget)
+        container_layout.addWidget(right_widget)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(50, 0, 50, 50)
+        main_layout.addStretch(1)
+        main_layout.addWidget(container, alignment=Qt.AlignmentFlag.AlignCenter)
+        main_layout.addStretch(1)
+
+    def set_flash_info(
+        self, iso_path, drive_path, drive_display, iso_type="unknown", iso_details=None
+    ):
+        self.iso_path = iso_path
+        self.drive_path = drive_path
+        self.drive_display = drive_display
+        self.iso_type = iso_type
+        self.iso_details = iso_details or {}
+
+        self.flashing = False
+        self.content_container.show()
+        self.progress_container.hide()
+        self.progress_bar.setValue(0)
+        self.status_label.setText("Ready to flash...")
+        self.status_label.setStyleSheet(
+            "font-size: 12pt; color: #f9e79f; font-weight: bold; margin: 10px 0; background-color: transparent; border: none;"
+        )
+
+        filename = os.path.basename(iso_path)
+        if len(filename) > 30:
+            filename = filename[:27] + "..."
+
+        if self.iso_type == "linux":
+            type_indicator = "🐧"
+        elif self.iso_type == "windows":
+            type_indicator = "🪟"
+        else:
+            type_indicator = "💿"
+
+        self.image_label.setText(f"{type_indicator} {filename}")
+
+        drive_display_short = drive_display
+        if len(drive_display) > 35:
+            drive_display_short = drive_display[:32] + "..."
+        self.drive_label.setText(drive_display_short)
+
+    def start_flash(self):
+        self.flashing = True
+
+        self.content_container.hide()
+        self.progress_container.show()
+
+        self.progress_bar.setValue(0)
+        self.status_label.setText("Preparing to flash...")
+        self.status_label.setStyleSheet(
+            "font-size: 12pt; color: #f9e79f; font-weight: bold; margin: 10px 0; background-color: transparent; border: none;"
+        )
+
+    def update_progress(self, value):
+        self.progress_bar.setValue(value)
+
+    def update_status(self, message):
+        self.status_label.setText(message)
+
+    def flash_completed(self, success, message):
+        self.flashing = False
+
+        if success:
+            self.status_label.setText("Flash completed successfully!")
+            self.status_label.setStyleSheet(
+                "font-size: 12pt; color: #f9e79f; font-weight: bold; margin: 10px 0; background-color: transparent; border: none;"
             )
         else:
-            self.status_output.append(f"--- Write Failed (Exit Code: {exit_code}) ---")
-            QMessageBox.critical(
+            self.status_label.setText(f"Flash failed: {message}")
+            self.status_label.setStyleSheet(
+                "font-size: 12pt; color: #e74c3c; font-weight: bold; margin: 10px 0; background-color: transparent; border: none;"
+            )
+            QMessageBox.critical(self, "Error", f"Flash failed: {message}")
+
+    def is_flashing(self):
+        return self.flashing
+
+
+class SuccessPage(QWidget):
+    flash_another_requested = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setup_ui()
+
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(50, 50, 50, 50)
+        main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setSpacing(30)
+        container_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        icon_label = QLabel("🎉")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet(
+            "font-size: 60pt; border: none; background: transparent;"
+        )
+
+        title_label = QLabel("Flash Completed Successfully!")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setStyleSheet("font-size: 20pt; font-weight: bold; color: #f9e79f;")
+
+        message_label = QLabel("Your image has been successfully written to the drive.")
+        message_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        message_label.setStyleSheet("font-size: 12pt; color: #ffffff;")
+
+        self.flash_another_button = QPushButton("Flash Another Image")
+        self.flash_another_button.setProperty("class", "primary")
+        self.flash_another_button.setMinimumHeight(40)
+        self.flash_another_button.setFixedWidth(250)
+        self.flash_another_button.clicked.connect(self.flash_another_requested.emit)
+        self.flash_another_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #f9e79f; color: #2c3e50; border: 1px solid #f9e79f;
+                border-radius: 6px; font-weight: bold; font-size: 11pt; padding: 10px;
+            }
+            QPushButton:hover { background-color: #f7dc6f; border-color: #f7dc6f; }
+            QPushButton:pressed { background-color: #f4d03f; }
+        """
+        )
+
+        container_layout.addWidget(icon_label)
+        container_layout.addWidget(title_label)
+        container_layout.addWidget(message_label)
+        container_layout.addSpacing(20)
+        container_layout.addWidget(
+            self.flash_another_button, alignment=Qt.AlignmentFlag.AlignCenter
+        )
+
+        main_layout.addWidget(container)
+
+
+class EtcherWizardApp(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("JustDD - USB Image Writer")
+        self.setMinimumSize(800, 450)
+        self.resize(900, 500)
+
+        self.iso_path = ""
+        self.drive_path = ""
+        self.drive_display = ""
+        self.flash_worker = None
+        self.current_page = 0
+        self._shutdown_in_progress = False
+
+        self.logs_window = LogsWindow()
+
+        self.iso_downloader_widget = IsoDownloaderWidget()
+
+        self.about_widget = AboutWidget()
+
+        self.setup_ui()
+        self.update_navigation_buttons()
+
+    def closeEvent(self, event):
+        if self._shutdown_in_progress:
+            event.accept()
+            return
+
+        self._shutdown_in_progress = True
+
+        if self.flash_worker and self.flash_worker.isRunning():
+            reply = QMessageBox.question(
                 self,
-                "Error",
-                f"Failed to write ISO image. Check status output for details. Exit code: {exit_code}",
+                "Flash in Progress",
+                "A flash operation is currently in progress. Are you sure you want to exit?\n\n"
+                "This will cancel the operation and may leave your drive in an unusable state.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
 
-        if self.process:  # Check if process exists before clearing
-            self.process.finished.disconnect()  # Disconnect signals to prevent issues if called multiple times
-            self.process.readyReadStandardOutput.disconnect()
-            self.process.readyReadStandardError.disconnect()
-            self.process = None  # Clear the process object
+            if reply == QMessageBox.StandardButton.No:
+                self._shutdown_in_progress = False
+                event.ignore()
+                return
 
-        # Re-enable UI elements
-        self.write_button.setEnabled(True)
-        self.refresh_drives_button.setEnabled(True)
-        self.iso_browse_button.setEnabled(True)
-        self.drive_combo.setEnabled(True)
-        self.open_sync_button.setEnabled(True)
-        tab_widget = self.findChild(QTabWidget)
-        if tab_widget:
-            tab_widget.tabBar().setEnabled(True)
-        self.update_write_button_state()
+            self._force_cleanup_worker()
 
-    def process_finished_win(self, exit_code=None, exit_status=None):
-        # If called by QProcess signal, get exit code from the process
-        if exit_code is None and self.process:
-            exit_code = self.process.exitCode()
-            exit_status = self.process.exitStatus()  # QProcess.ExitStatus
+        if self.logs_window:
+            try:
+                self.logs_window.close()
+                self.logs_window = None
+            except:
+                pass
 
-        # --- Placeholder message ---
-        if "Simulating" in self.status_output_win.toPlainText() and exit_code == 0:
-            self.status_output_win.append("--- Simulation Complete ---")
-            QMessageBox.information(self, "Simulation", "Simulated write completed.")
-        # --- End Placeholder ---
-        elif exit_status == QProcess.ExitStatus.NormalExit and exit_code == 0:
-            self.status_output_win.append("--- Write Completed Successfully ---")
-            QMessageBox.information(self, "Success", "ISO image written successfully.")
-        elif exit_status == QProcess.ExitStatus.CrashExit:
-            self.status_output_win.append(f"--- Write Failed (Process Crashed) ---")
-            QMessageBox.critical(
-                self, "Error", f"Write process crashed. Check status output."
-            )
-        else:
-            self.status_output_win.append(
-                f"--- Write Failed (Exit Code: {exit_code}) ---"
-            )
-            QMessageBox.critical(
+        self._cleanup_all_resources()
+
+        event.accept()
+
+    def _force_cleanup_worker(self):
+        # Force cleanup of worker thread
+        if self.flash_worker:
+            try:
+                self.flash_worker.progress.disconnect()
+                self.flash_worker.status_update.disconnect()
+                self.flash_worker.log_message.disconnect()
+                self.flash_worker.finished.disconnect()
+
+                self.flash_worker.requestInterruption()
+
+                if not self.flash_worker.wait(2000):
+                    self.flash_worker.terminate()
+                    if not self.flash_worker.wait(1000):
+                        pass
+
+                self.flash_worker = None
+
+            except Exception as e:
+                self.flash_worker = None
+
+    def _cleanup_all_resources(self):
+        # Clean up all application resources
+        try:
+            if self.flash_worker:
+                self._force_cleanup_worker()
+
+            QApplication.processEvents()
+
+        except Exception:
+            pass
+
+    def setup_ui(self):
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        layout = QVBoxLayout(central_widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header_frame = QFrame()
+        header_frame.setFixedHeight(60)
+        header_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #2d2d2d;
+            }
+        """
+        )
+        header_layout = QHBoxLayout(header_frame)
+        header_layout.setContentsMargins(30, 0, 30, 0)
+        header_layout.setSpacing(15)
+
+        title_container = QWidget()
+        title_container.setStyleSheet("background-color: transparent;")
+        title_layout = QHBoxLayout(title_container)
+        title_layout.setContentsMargins(0, 0, 0, 0)
+        title_layout.setSpacing(10)
+
+        icon_label = QLabel()
+        icon_path = resource_path("images/icon.png")
+        if os.path.exists(icon_path):
+            pixmap = QPixmap(icon_path)
+            if not pixmap.isNull():
+                icon_label.setPixmap(
+                    pixmap.scaled(36, 36, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                )
+            icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        app_title = QLabel("JustDD")
+        app_title.setStyleSheet("font-size: 16pt; font-weight: bold; color: #f9e79f;")
+
+        title_layout.addWidget(icon_label)
+        title_layout.addWidget(app_title)
+
+        indicator_container = QWidget()
+        indicator_container.setStyleSheet("background-color: transparent;")
+        indicator_layout = QVBoxLayout(indicator_container)
+        indicator_layout.setContentsMargins(0, 0, 0, 0)
+        indicator_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self.step_indicator = CompactStepIndicator()
+        self.step_indicator.setStyleSheet("background-color: transparent;")
+        indicator_layout.addWidget(self.step_indicator)
+
+        header_layout.addWidget(title_container)
+        header_layout.addStretch()
+        header_layout.addWidget(indicator_container)
+
+        self.stacked_widget = QStackedWidget()
+
+        self.iso_page = ISOSelectionPage()
+        self.drive_page = DriveSelectionPage()
+        self.flash_page = FlashPage()
+        self.success_page = SuccessPage()
+
+        self.iso_page.selection_changed.connect(self.update_navigation_buttons)
+        self.drive_page.selection_changed.connect(self.update_navigation_buttons)
+        self.success_page.flash_another_requested.connect(self.reset_to_start)
+
+        self.stacked_widget.addWidget(self.iso_page)
+        self.stacked_widget.addWidget(self.drive_page)
+        self.stacked_widget.addWidget(self.flash_page)
+        self.stacked_widget.addWidget(self.success_page)
+
+        footer_frame = QFrame()
+        footer_frame.setFixedHeight(60)
+        footer_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #2d2d2d;
+                border-top: 1px solid #404040;
+            }
+        """
+        )
+        footer_layout = QHBoxLayout(footer_frame)
+        footer_layout.setContentsMargins(30, 10, 30, 10)
+        footer_layout.setSpacing(15)
+
+        left_buttons_layout = QHBoxLayout()
+
+        logs_button = QPushButton("Show Logs")
+        logs_button.setFixedSize(100, 35)
+        logs_button.clicked.connect(self.show_logs)
+
+        iso_downloader_button = QPushButton("ISO")
+        iso_downloader_button.setFixedSize(120, 35)
+        iso_downloader_button.clicked.connect(self.show_iso_downloader)
+
+        about_button = QPushButton("About")
+        about_button.setFixedSize(80, 35)
+        about_button.clicked.connect(self.show_about)
+
+        left_buttons_layout.addWidget(logs_button)
+        left_buttons_layout.addWidget(iso_downloader_button)
+        left_buttons_layout.addWidget(about_button)
+        left_buttons_layout.addStretch()
+
+        footer_layout.addLayout(left_buttons_layout)
+        footer_layout.addStretch()
+
+        nav_container = QWidget()
+        nav_layout = QHBoxLayout(nav_container)
+        nav_layout.setContentsMargins(0, 0, 0, 0)
+        nav_container.setStyleSheet("background-color: #2d2d2d;")
+        nav_layout.setSpacing(15)
+
+        self.back_button = QPushButton("Back")
+        self.back_button.clicked.connect(self.go_back)
+        self.back_button.setMinimumHeight(35)
+        self.back_button.setFixedWidth(80)
+        self.back_button.setStyleSheet(
+            """
+            QPushButton {
+            background-color: #404040;
+            color: #ffffff;
+            border: 1px solid #505050;
+            border-radius: 8px;
+            font-weight: bold;
+            }
+            QPushButton:hover {
+            background-color: #505050;
+            border-color: #606060;
+            }
+            QPushButton:pressed {
+            background-color: #353535;
+            }
+        """
+        )
+
+        self.continue_button = QPushButton("Continue")
+        self.continue_button.setProperty("class", "primary")
+        self.continue_button.setStyleSheet(
+            """
+            QPushButton {
+            background-color: #f9e79f;
+            color: #2c3e50;
+            border: 1px solid #f9e79f;
+            border-radius: 8px;
+            font-weight: bold;
+            }
+            QPushButton:hover {
+            background-color: #f7dc6f;
+            border-color: #f7dc6f;
+            }
+            QPushButton:disabled {
+            background-color: #404040;
+            color: #888888;
+            border-color: #404040;
+            }
+            QPushButton:pressed {
+            background-color: #f4d03f;
+            }
+        """
+        )
+        self.continue_button.clicked.connect(self.go_forward)
+        self.continue_button.setMinimumHeight(35)
+        self.continue_button.setFixedWidth(100)
+
+        self.flash_button = QPushButton("Flash!")
+        self.flash_button.setProperty("class", "danger")
+        self.flash_button.clicked.connect(self.start_flash)
+        self.flash_button.setMinimumHeight(35)
+        self.flash_button.setFixedWidth(100)
+        self.flash_button.setStyleSheet(
+            """
+            QPushButton {
+            background-color: #e74c3c;
+            color: #ffffff;
+            border: 1px solid #e74c3c;
+            border-radius: 8px;
+            font-weight: bold;
+            }
+            QPushButton:hover {
+            background-color: #c0392b;
+            border-color: #c0392b;
+            }
+            QPushButton:pressed {
+            background-color: #a93226;
+            }
+        """
+        )
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.clicked.connect(self.cancel_flash)
+        self.cancel_button.setMinimumHeight(35)
+        self.cancel_button.setFixedWidth(80)
+        self.cancel_button.setStyleSheet(
+            """
+            QPushButton {
+            background-color: #e74c3c;
+            color: #ffffff;
+            border: 1px solid #e74c3c;
+            border-radius: 8px;
+            font-weight: bold;
+            }
+            QPushButton:hover {
+            background-color: #c0392b;
+            border-color: #c0392b;
+            }
+            QPushButton:pressed {
+            background-color: #a93226;
+            }
+        """
+        )
+        self.cancel_button.setFixedWidth(80)
+
+        nav_layout.addWidget(self.back_button)
+        nav_layout.addWidget(self.cancel_button)
+        nav_layout.addWidget(self.continue_button)
+        nav_layout.addWidget(self.flash_button)
+
+        footer_layout.addWidget(nav_container)
+
+        layout.addWidget(header_frame)
+        layout.addWidget(self.stacked_widget, 1)
+        layout.addWidget(footer_frame)
+
+    def update_navigation_buttons(self):
+        page = self.current_page
+        is_flashing = self.flash_page.is_flashing()
+
+        self.back_button.hide()
+        self.continue_button.hide()
+        self.flash_button.hide()
+        self.cancel_button.hide()
+
+        if is_flashing:
+            self.cancel_button.show()
+        elif page == 0:
+            self.continue_button.show()
+            self.continue_button.setEnabled(self.iso_page.has_valid_selection())
+        elif page == 1:
+            self.back_button.show()
+            self.continue_button.show()
+            self.continue_button.setEnabled(self.drive_page.has_valid_selection())
+        elif page == 2:
+            self.back_button.show()
+            self.flash_button.show()
+        elif page == 3:
+            pass
+
+    def go_back(self):
+        if self.current_page > 0 and self.current_page <= 2:
+            self.current_page -= 1
+            self.step_indicator.set_step(self.current_page + 1)
+            self.stacked_widget.setCurrentIndex(self.current_page)
+            self.update_navigation_buttons()
+
+    def go_forward(self):
+        if self.current_page == 0:
+            iso_path = self.iso_page.get_selected_iso()
+            if iso_path:
+                self.iso_path = iso_path
+                iso_type = self.iso_page.get_iso_type()
+                iso_details = self.iso_page.get_iso_details()
+
+                self.logs_window.append_log(f"Selected ISO: {iso_path}")
+                self.logs_window.append_log(f"Detected type: {iso_type}")
+                if iso_details.get("name"):
+                    self.logs_window.append_log(f"OS: {iso_details['name']}")
+
+                self.current_page = 1
+                self.step_indicator.set_step(2)
+                self.stacked_widget.setCurrentIndex(1)
+                self.update_navigation_buttons()
+        elif self.current_page == 1:
+            drive_path, drive_display = self.drive_page.get_selected_drive()
+            if drive_path:
+                self.drive_path = drive_path
+                self.drive_display = drive_display
+                self.logs_window.append_log(f"Selected drive: {drive_path}")
+                self.current_page = 2
+                self.step_indicator.set_step(3)
+
+                iso_type = self.iso_page.get_iso_type()
+                iso_details = self.iso_page.get_iso_details()
+                self.flash_page.set_flash_info(
+                    self.iso_path,
+                    self.drive_path,
+                    self.drive_display,
+                    iso_type,
+                    iso_details,
+                )
+
+                self.stacked_widget.setCurrentIndex(2)
+                self.update_navigation_buttons()
+
+    def start_flash(self):
+        reply = QMessageBox.warning(
+            self,
+            "Confirm Flash Operation",
+            f"Are you absolutely sure you want to flash the image to {self.drive_path}?\n\n"
+            f"This will DESTROY ALL DATA on the drive!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.flash_page.start_flash()
+            self.update_navigation_buttons()
+
+            iso_type = self.iso_page.get_iso_type()
+            mode = "windows" if iso_type == "windows" else "linux"
+
+            self.flash_worker = FlashWorker(self.iso_path, self.drive_path, mode)
+            self.flash_worker.progress.connect(self.flash_page.update_progress)
+            self.flash_worker.status_update.connect(self.flash_page.update_status)
+            self.flash_worker.log_message.connect(self.logs_window.append_log)
+            self.flash_worker.finished.connect(self.on_flash_finished)
+            self.flash_worker.start()
+
+    def cancel_flash(self):
+        if self.flash_worker:
+            reply = QMessageBox.warning(
                 self,
-                "Error",
-                f"Failed to write ISO image. Check status output for details. Exit code: {exit_code}",
+                "Cancel Flash Operation",
+                "⚠️ Are you sure you want to cancel the flash operation?\n\n"
+                "Cancelling during the flash process may leave your USB drive in a corrupted "
+                "or unusable state. You may need to reformat the drive to use it again.\n\n"
+                "Do you want to continue with cancellation?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
             )
 
-        if self.process:  # Check if process exists before clearing
-            self.process.finished.disconnect()  # Disconnect signals to prevent issues if called multiple times
-            self.process.readyReadStandardOutput.disconnect()
-            self.process.readyReadStandardError.disconnect()
-            self.process = None  # Clear the process object
+            if reply == QMessageBox.StandardButton.No:
+                return
 
-        # Re-enable Windows UI elements
-        self.write_button_win.setEnabled(True)
-        self.refresh_drives_button_win.setEnabled(True)
-        self.iso_browse_button_win.setEnabled(True)
-        self.drive_combo.setEnabled(True)
-        self.update_write_button_state_win()  # Re-evaluate button state
+            self.log_message_safe(
+                "User confirmed cancellation - stopping flash operation..."
+            )
 
-    # --- Method to open the Sync Widget ---
-    def open_sync_widget(self):
-        # Ensure the target drive is up-to-date before showing
-        self.sync_widget.setTargetDrive(self.target_drive)
-        self.sync_widget.show()
-        self.sync_widget.raise_()
-        self.sync_widget.activateWindow()
+            try:
+                self.flash_worker.finished.disconnect()
 
-    # --- Method to open the ISO Downloader Widget ---
-    def open_iso_downloader_widget(self):
+                self.flash_worker.requestInterruption()
+
+                if not self.flash_worker.wait(5000):
+                    self.log_message_safe("Force terminating flash thread...")
+                    self.flash_worker.terminate()
+                    self.flash_worker.wait(2000)
+
+                self.flash_worker = None
+
+            except Exception as e:
+                self.log_message_safe(f"Error during cancellation: {e}")
+                self.flash_worker = None
+
+        self.flash_page.flashing = False
+        self.update_navigation_buttons()
+        self.flash_page.set_flash_info(
+            self.iso_path, self.drive_path, self.drive_display
+        )
+        self.flash_page.status_label.setText("Flash operation cancelled.")
+        self.flash_page.status_label.setStyleSheet(
+            "font-size: 12pt; color: #f39c12; font-weight: bold; background-color: transparent; border: none;"
+        )
+
+    def log_message_safe(self, message):
+        # Safely log a message, checking if logs_window still exists
+        try:
+            if self.logs_window and not self._shutdown_in_progress:
+                self.logs_window.append_log(message)
+        except:
+            pass
+
+    def on_flash_finished(self, success, message):
+        if self._shutdown_in_progress:
+            return
+
+        try:
+            self.flash_page.flash_completed(success, message)
+
+            if self.flash_worker:
+                try:
+                    self.flash_worker.progress.disconnect()
+                    self.flash_worker.status_update.disconnect()
+                    self.flash_worker.log_message.disconnect()
+                    self.flash_worker.finished.disconnect()
+                except:
+                    pass
+
+                self.flash_worker.deleteLater()
+                self.flash_worker = None
+
+            if success:
+                self.current_page = 3
+                self.stacked_widget.setCurrentWidget(self.success_page)
+                self.step_indicator.set_step(self.step_indicator.total_steps + 1)
+
+            self.update_navigation_buttons()
+
+        except Exception as e:
+            if not self._shutdown_in_progress:
+                self.log_message_safe(f"Error in flash finish handler: {e}")
+
+    def reset_to_start(self):
+        self.current_page = 0
+        self.iso_path = ""
+        self.drive_path = ""
+        self.drive_display = ""
+
+        self.iso_page.iso_path = None
+        self.iso_page.iso_type = "unknown"
+        self.iso_page.iso_details = {}
+        self.iso_page.file_path_label.setText("No file selected")
+        self.iso_page.file_path_label.setStyleSheet(
+            "color: #888888; font-style: italic; font-size: 11pt;"
+        )
+        self.iso_page.iso_type_label.hide()
+
+        self.drive_page.drive_list.clearSelection()
+
+        self.flash_page.set_flash_info("", "", "")
+        self.flash_page.content_container.show()
+        self.flash_page.progress_container.hide()
+        self.flash_page.progress_bar.setValue(0)
+
+        self.step_indicator.set_step(1)
+        self.stacked_widget.setCurrentWidget(self.iso_page)
+        self.update_navigation_buttons()
+
+    def show_logs(self):
+        self.logs_window.show()
+        self.logs_window.raise_()
+        self.logs_window.activateWindow()
+
+    def show_iso_downloader(self):
         self.iso_downloader_widget.show()
         self.iso_downloader_widget.raise_()
         self.iso_downloader_widget.activateWindow()
 
+    def show_about(self):
+        self.about_widget.show()
+        self.about_widget.raise_()
+        self.about_widget.activateWindow()
+
 
 if __name__ == "__main__":
     os.environ["QT_LOGGING_RULES"] = "qt.qpa.wayland.textinput=false"
+
     app = QApplication(sys.argv)
-    # Set window icon for both X11 and Wayland
+    app.setStyleSheet(get_etcher_style())
+
     icon_path = resource_path("images/icon.png")
     app.setWindowIcon(QIcon(icon_path))
-    os.environ["XDG_CURRENT_DESKTOP"] = os.environ.get(
-        "XDG_CURRENT_DESKTOP", ""
-    )  # Ensure env is set for Wayland
-    apply_stylesheet(app, theme="dark_amber.xml")
-    window = DDApp()
-    window.resize(650, 450)
+    os.environ["XDG_CURRENT_DESKTOP"] = os.environ.get("XDG_CURRENT_DESKTOP", "")
+
+    window = EtcherWizardApp()
     window.show()
+
     sys.exit(app.exec())

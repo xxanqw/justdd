@@ -12,8 +12,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QStandardPaths, QModelIndex, QThread, Signal, QObject
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 import os
-import time
-from urllib.parse import urljoin
 
 from .download_worker import IsoDownloadWorker
 from .distro_config import DISTRO_CONFIG
