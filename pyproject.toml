@@ -8,7 +8,6 @@ dependencies = [
     "PySide6",
     "requests",
     "beautifulsoup4",
-    "qt-material>=2.17",
 ]
 
 [project.optional-dependencies]
