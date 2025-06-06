@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JustDD - Modern USB Image Writer</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="https://cdn.xserv.pp.ua/justdd/icon.png" type="image/png">
+    <meta name="description" content="JustDD is a modern, cross-platform USB image writer designed for both beginners and power users.">
+    <script src="https://kit.fontawesome.com/eafcaa75eb.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <!-- Hero Section -->
+    <section id="home" class="hero">
+        <div class="hero-container">
+            <div class="hero-content">
+                <div class="logo-container">
+                    <img src="https://cdn.xserv.pp.ua/justdd/icon.png" alt="JustDD Logo" class="logo-img">
+                    <span class="logo-text">JustDD</span>
+                </div>
+                <h1 class="hero-title">
+                    <span class="gradient-text">Modern USB Image Writer</span><br>
+                </h1>
+                <p class="hero-description">
+                    A safe, intuitive interface for creating Linux live USBs and Windows installers.
+                    Designed for both beginners and power users.
+                </p>
+                <div class="hero-badges">
+                    <img src="https://img.shields.io/aur/version/justdd?style=for-the-badge" alt="AUR Version">
+                    <img src="https://img.shields.io/github/v/release/xxanqw/justdd?style=for-the-badge" alt="GitHub Release">
+                    <img src="https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge" alt="Python 3.9+">
+                    <img src="https://img.shields.io/github/license/xxanqw/justdd?style=for-the-badge" alt="License">
+                </div>
+                <div class="hero-buttons">
+                    <a href="#" class="btn btn-primary" id="heroDownloadBtn">Download Now</a>
+                    <a href="https://github.com/xxanqw/justdd" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">View on GitHub</a>
+                </div>
+            </div>
+            <div class="hero-image">
+                <img src="https://cdn.xserv.pp.ua/justdd/main.png" alt="JustDD Interface" class="hero-screenshot">
+            </div>
+        </div>
+    </section>
+
+    <!-- Download Modal -->
+    <div id="downloadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="section-title">Download JustDD</h2>
+                <p class="subtitle">Choose the option that best fits your system</p>
+                <span class="close-button">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="download-grid">
+                    <div class="download-card recommended">
+                        <div class="download-header">
+                            <h3>🏛️ Arch Linux</h3>
+                        </div>
+                        <p>Install from the AUR</p>
+                        <div class="code-block">
+                            <div class="code-block-wrapper">
+                                <code>yay -S justdd</code>
+                            </div>
+                            <button class="copy-btn" onclick="copyToClipboard('yay -S justdd')"><i class="fa-solid fa-clipboard"></i></button>
+                        </div>
+                        <a href="https://aur.archlinux.org/packages/justdd" class="btn btn-primary" target="_blank" rel="noopener noreferrer">View on AUR</a>
+                    </div>
+                    
+                    <div class="download-card">
+                        <div class="download-header">
+                            <h3><i class="fa-brands fa-ubuntu"></i> Debian/Ubuntu</h3>
+                        </div>
+                        <p>Download the latest .deb package</p>
+                        <div class="code-block">
+                            <div class="code-block-wrapper">
+                                <code>sudo dpkg -i justdd_*.deb</code>
+                            </div>
+                            <button class="copy-btn" onclick="copyToClipboard('sudo dpkg -i justdd_*.deb')"><i class="fa-solid fa-clipboard"></i></button>
+                        </div>
+                        <a href="https://github.com/xxanqw/justdd/releases/latest" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Download .deb</a>
+                    </div>
+                    
+                    <div class="download-card">
+                        <div class="download-header">
+                            <h3><i class="fa-brands fa-fedora"></i> Fedora/CentOS</h3>
+                        </div>
+                        <p>Download the latest .rpm package</p>
+                        <div class="code-block">
+                            <div class="code-block-wrapper">
+                                <code>sudo rpm -i justdd_*.rpm</code>
+                            </div>
+                            <button class="copy-btn" onclick="copyToClipboard('sudo rpm -i justdd_*.rpm')"><i class="fa-solid fa-clipboard"></i></button>
+                        </div>
+                        <a href="https://github.com/xxanqw/justdd/releases/latest" class="btn btn-primary" target="_blank" rel="noopener noreferrer">Download .rpm</a>
+                    </div>
+                    
+                    <div class="download-card">
+                        <div class="download-header">
+                            <h3><i class="fa-solid fa-cube"></i> Source</h3>
+                        </div>
+                        <p>Build from source for other distributions</p>
+                        <div class="code-block">
+                            <div class="code-block-wrapper">
+                                <code>curl -Ls https://shorty.pp.ua/justdd-source | bash</code>
+                            </div>
+                            <button class="copy-btn" onclick="copyToClipboard('curl -Ls https://shorty.pp.ua/justdd-source | bash')"><i class="fa-solid fa-clipboard"></i></button>
+                        </div>
+                        <a href="https://github.com/xxanqw/justdd" class="btn btn-primary" target="_blank" rel="noopener noreferrer">View Source</a>
+                    </div>
+
+                    <div class="download-card wide soon">
+                        <div class="download-header">
+                            <h3><i class="fa-brands fa-apple"></i> macOS</h3>
+                        </div>
+                        <p>Coming soon for macOS! Check back later for updates.</p>
+                    </div>
+                        
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Floating Footer -->
+    <footer class="floating-footer">
+        <div class="footer-logo">
+            <img src="https://avatars.githubusercontent.com/u/70416831?v=4" alt="JustDD Logo">
+            <span>xxanqw</span>
+        </div>
+        <div class="footer-links">
+            <a href="https://github.com/xxanqw/justdd" target="_blank">GitHub</a>
+            <a href="https://github.com/xxanqw/justdd/issues" target="_blank">Report Issues</a>
+            <a href="https://github.com/xxanqw/justdd/blob/main/LICENSE" target="_blank">License</a>
+        </div>
+        <div class="footer-social">
+            <a href="https://github.com/xxanqw" target="_blank"><i class="fab fa-github"></i></a>
+            <a href="https://twitter.com/share?text=Check%20out%20JustDD%20-%20a%20modern%20USB%20image%20writer!&url=https://github.com/xxanqw/justdd" target="_blank"><i class="fab fa-twitter"></i></a>
+            <a href="https://xxanqw.pp.ua"><i class="fas fa-globe"></i></a>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
