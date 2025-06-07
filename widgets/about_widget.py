@@ -26,6 +26,8 @@ class AboutWidget(QDialog):
                 color: #ffffff;
                 font-family: "Segoe UI", "Roboto", "Arial", sans-serif;
                 font-size: 11pt;
+                border: 1px solid #404040;
+                border-radius: 12px;
             }
             QLabel {
                 background-color: transparent;

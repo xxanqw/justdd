@@ -198,6 +198,11 @@ def get_etcher_style():
     QFrame#messageBoxContent {
         background-color: #2d2d2d;
         border-radius: 0px;
+        border-top: 1px solid #404040;
+        border-left: 1px solid #404040;
+        border-right: 1px solid #404040;
+        border-top-left-radius: 12px;
+        border-top-right-radius: 12px;
     }
 
     QLabel#messageBoxTitle {
@@ -214,7 +219,13 @@ def get_etcher_style():
 
     QFrame#messageBoxButtons {
         background-color: #1e1e1e;
+        border-radius: 0px;
         border-top: 1px solid #404040;
+        border-bottom: 1px solid #404040;
+        border-left: 1px solid #404040;
+        border-right: 1px solid #404040;
+        border-bottom-left-radius: 12px;
+        border-bottom-right-radius: 12px;
     }
 
     QPushButton#primaryButton {
