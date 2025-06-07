@@ -1,52 +1,52 @@
-# FEDORA IS BROKEN FOR NOW
-
 from . import fetch_url, extract_links
 import re
 from bs4 import BeautifulSoup
 
 
 def fetch_fedora_versions(config):
-    versions_list = []
     base_url = config.get("base_url")
     if not base_url:
         error_msg = "fetch_fedora_versions: 'base_url' not found in config"
         print(error_msg)
-        return []
+        return [], error_msg
     
     try:
         result = fetch_url(base_url, timeout=10, error_prefix="Error fetching Fedora versions")
-        print(f"Debug: fetch_url returned type: {type(result)}")
-        print(f"Debug: fetch_url returned length: {len(result) if hasattr(result, '__len__') else 'No length'}")
-        print(f"Debug: fetch_url returned: {result}")
         
         if not result:
-            print(f"fetch_fedora_versions: No result from fetch_url for {base_url}")
-            return []
+            error_msg = f"fetch_fedora_versions: No result from fetch_url for {base_url}"
+            print(error_msg)
+            return [], error_msg
             
+        # Handle different return formats from fetch_url
+        soup = None
+        error = None
+        
         if isinstance(result, tuple) and len(result) == 2:
             soup, error = result
+        elif isinstance(result, str):
+            soup = BeautifulSoup(result, 'html.parser')
         else:
-            print(f"fetch_fedora_versions: Unexpected result format from fetch_url: {result}")
-            return []
+            error_msg = f"fetch_fedora_versions: Unexpected result format from fetch_url: {type(result)}"
+            print(error_msg)
+            return [], error_msg
             
         if error:
             print(f"fetch_fedora_versions: {error}")
-            return []
+            return [], error
             
         if not soup:
-            print(f"fetch_fedora_versions: Empty content returned from {base_url}")
-            return []
+            error_msg = f"fetch_fedora_versions: Empty content returned from {base_url}"
+            print(error_msg)
+            return [], error_msg
             
         if isinstance(soup, str):
             soup = BeautifulSoup(soup, 'html.parser')
-    except ValueError as e:
-        print(f"fetch_fedora_versions: Unpacking error: {e}")
-        print(f"fetch_fedora_versions: Result was: {result}")
-        return []
+            
     except Exception as e:
-        print(f"fetch_fedora_versions: Unexpected error: {e}")
-        print(f"fetch_fedora_versions: Result was: {result}")
-        return []
+        error_msg = f"fetch_fedora_versions: Unexpected error: {e}"
+        print(error_msg)
+        return [], error_msg
     
     links = extract_links(soup, base_url)
     
@@ -66,7 +66,7 @@ def fetch_fedora_versions(config):
             "url": version_items[version]
         })
     
-    return result
+    return result, None
 
 
 def fetch_fedora_isos(version_url):
@@ -86,10 +86,16 @@ def fetch_fedora_isos(version_url):
                 print(f"fetch_fedora_isos: No result from fetch_url for {path}")
                 continue
                 
+            # Handle different return formats from fetch_url
+            soup = None
+            error = None
+            
             if isinstance(result, tuple) and len(result) == 2:
                 soup, error = result
+            elif isinstance(result, str):
+                soup = BeautifulSoup(result, 'html.parser')
             else:
-                print(f"fetch_fedora_isos: Unexpected result format from fetch_url: {result}")
+                print(f"fetch_fedora_isos: Unexpected result format from fetch_url: {type(result)}")
                 continue
                 
             if error:
@@ -123,7 +129,7 @@ def fetch_fedora_isos(version_url):
             print(f"fetch_fedora_isos: Error processing {path}: {e}")
             continue
     
-    return isos
+    return isos, None if isos else "No ISOs found"
 
 
 def _get_fedora_iso_display_name(filename, version):
