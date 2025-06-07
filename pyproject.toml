@@ -8,6 +8,8 @@ dependencies = [
     "PySide6",
     "requests",
     "beautifulsoup4",
+    "desktop-notifier>=6.1.1",
+    "aiohttp>=3.12.11",
 ]
 
 [project.optional-dependencies]

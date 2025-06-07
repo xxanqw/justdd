@@ -8,6 +8,7 @@
 [![Debian Package Build Status](https://img.shields.io/github/actions/workflow/status/xxanqw/justdd/debian-package.yml?label=Debian%20Package&style=for-the-badge)](https://github.com/xxanqw/justdd/actions/workflows/debian-package.yml)
 [![Fedora Package Build Status](https://img.shields.io/github/actions/workflow/status/xxanqw/justdd/fedora-package.yml?label=Fedora%20Package&style=for-the-badge)](https://github.com/xxanqw/justdd/actions/workflows/fedora-package.yml)
 [![AUR Package Version](https://img.shields.io/aur/version/justdd?style=for-the-badge)](https://aur.archlinux.org/packages/justdd)
+[![AUR (BIN) Package Version](https://img.shields.io/aur/version/justdd-bin?label=AUR%20(BIN)&style=for-the-badge)](https://aur.archlinux.org/packages/justdd-bin)
 [![GitHub release (latest by date)](https://img.shields.io/github/v/release/xxanqw/justdd?style=for-the-badge)](https://github.com/xxanqw/justdd/releases/latest)
 [![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue?style=for-the-badge)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/github/license/xxanqw/justdd?style=for-the-badge)](LICENSE)
@@ -104,6 +105,11 @@ paru -S justdd
 git clone https://aur.archlinux.org/justdd.git
 cd justdd
 makepkg -si
+
+# Pre-built binary (AUR)
+yay -S justdd-bin
+
+paru -S justdd-bin
 ```
 
 </details>
