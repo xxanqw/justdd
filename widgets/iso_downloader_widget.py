@@ -15,7 +15,7 @@ import os
 
 from .download_worker import IsoDownloadWorker
 from .distro_config import DISTRO_CONFIG
-from .utils import format_time_display, clean_filename
+from .utils import format_time_display, clean_filename, send_notification
 
 from .fetchers.ubuntu_fetcher import fetch_ubuntu_versions, fetch_ubuntu_isos
 from .fetchers.fedora_fetcher import fetch_fedora_versions, fetch_fedora_isos
@@ -64,7 +64,11 @@ class VersionFetcherWorker(QObject):
                     }
                 ]
             elif self.fetch_function:
-                versions_data, error_message = self.fetch_function(self.config)
+                result = self.fetch_function(self.config)
+                if isinstance(result, tuple) and len(result) == 2:
+                    versions_data, error_message = result
+                else:
+                    versions_data = result if result else []
             else:
                 error_message = f"No fetch function provided for type: {distro_type}"
 
@@ -112,7 +116,11 @@ class IsoFetcherWorker(QObject):
             if distro_type == "ubuntu":
                 isos_data, error_message = fetch_ubuntu_isos(version_id, self._config)
             elif distro_type == "fedora" or distro_type.startswith("fedora_"):
-                isos_data, error_message = fetch_fedora_isos(version_url)
+                result = fetch_fedora_isos(version_url)
+                if isinstance(result, tuple) and len(result) == 2:
+                    isos_data, error_message = result
+                else:
+                    isos_data = result if result else []
             elif distro_type == "debian":
                 isos_data, error_message = fetch_debian_isos(self._config, version_id)
             elif distro_type.startswith("linuxmint"):
@@ -163,7 +171,7 @@ class IsoDownloaderWidget(QWidget):
 
     def setup_ui(self):
         # Set up the user interface components.
-        self.setWindowTitle("ISO Downloader")
+        self.setWindowTitle("JustDD - ISO Downloader")
         self.setMinimumSize(600, 200)
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(10)
@@ -533,8 +541,12 @@ class IsoDownloaderWidget(QWidget):
 
         if success:
             self.progress_bar.setValue(100)
-            self.status_label.setText(
-                f"Download completed: {os.path.basename(self.currently_downloaded_file)}"
+            filename = os.path.basename(self.currently_downloaded_file)
+            self.status_label.setText(f"Download completed: {filename}")
+            # Send custom notification on successful download
+            send_notification(
+                title="ISO Downloader", 
+                message=f"Download completed: {filename}",
             )
         else:
             self.progress_bar.setValue(0)

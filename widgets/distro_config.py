@@ -43,12 +43,10 @@ DISTRO_CONFIG = {
         "base_url": "https://cdimage.ubuntu.com/ubuntu-unity/releases/",
     },
     # Fedora Main Editions
-    # "Fedora Workstation": {
-    #     "type": "fedora_main",
-    #     "base_url": "https://download.fedoraproject.org/pub/fedora/linux/releases/",
-    #     "path_segment": "Workstation",
-    #     "name_key": "Workstation",
-    # },
+    "Fedora": {
+        "type": "fedora",
+        "base_url": "https://download.fedoraproject.org/pub/fedora/linux/releases/",
+    },
     # Arch Linux
     "Arch Linux": {
         "type": "archlinux",

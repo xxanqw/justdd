@@ -1,29 +1,33 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QLabel, QPushButton
+    QDialog, QVBoxLayout, QLabel, QPushButton, QWidget
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 import os
 import sys
 import subprocess
+from constants import __APP_NAME__, __AUTHOR__, __VERSION__, __GITHUB_URL__
 
 def resource_path(relative_path):
     if hasattr(sys, "_MEIPASS"):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.dirname(os.path.dirname(__file__)), relative_path)
 
-class AboutWidget(QWidget):
+class AboutWidget(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("About JustDD")
-        self.setWindowFlags(Qt.WindowType.Window)
+        self.setModal(True)
         self.setFixedSize(350, 380)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setStyleSheet("""
-            QWidget {
+            QDialog {
                 background-color: #1e1e1e;
                 color: #ffffff;
                 font-family: "Segoe UI", "Roboto", "Arial", sans-serif;
                 font-size: 11pt;
+                border: 1px solid #404040;
+                border-radius: 12px;
             }
             QLabel {
                 background-color: transparent;
@@ -57,17 +61,17 @@ class AboutWidget(QWidget):
         
         layout.addWidget(icon_container)
         
-        name_label = QLabel("JustDD")
+        name_label = QLabel(__APP_NAME__)
         name_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         name_label.setStyleSheet("font-size: 24pt; font-weight: bold; color: #f9e79f; margin: 3px 0;")
         layout.addWidget(name_label)
         
-        version_label = QLabel("Version 1.3")
+        version_label = QLabel(f"Version {__VERSION__}")
         version_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         version_label.setStyleSheet("font-size: 12pt; color: #cccccc; margin: 3px 0;")
         layout.addWidget(version_label)
         
-        author_label = QLabel("by xxanqw")
+        author_label = QLabel(f"by {__AUTHOR__}")
         author_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         author_label.setStyleSheet("font-size: 10pt; color: #aaaaaa; margin: 3px 0;")
         layout.addWidget(author_label)
@@ -130,7 +134,7 @@ class AboutWidget(QWidget):
     
     def open_github(self):
         try:
-            subprocess.run(['xdg-open', 'https://github.com/xxanqw/justdd'], check=False)
+            subprocess.run(['xdg-open', __GITHUB_URL__], check=False)
         except:
             pass
     

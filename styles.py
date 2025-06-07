@@ -193,4 +193,74 @@ def get_etcher_style():
         border-radius: 8px;
         padding: 15px;
     }
+
+    /* Custom Message Box Styles */
+    QFrame#messageBoxContent {
+        background-color: #2d2d2d;
+        border-radius: 0px;
+        border-top: 1px solid #404040;
+        border-left: 1px solid #404040;
+        border-right: 1px solid #404040;
+        border-top-left-radius: 12px;
+        border-top-right-radius: 12px;
+    }
+
+    QLabel#messageBoxTitle {
+        color: #f9e79f;
+        font-weight: bold;
+        font-size: 14pt;
+    }
+
+    QLabel#messageBoxText {
+        color: #ffffff;
+        font-size: 11pt;
+        line-height: 1.4;
+    }
+
+    QFrame#messageBoxButtons {
+        background-color: #1e1e1e;
+        border-radius: 0px;
+        border-top: 1px solid #404040;
+        border-bottom: 1px solid #404040;
+        border-left: 1px solid #404040;
+        border-right: 1px solid #404040;
+        border-bottom-left-radius: 12px;
+        border-bottom-right-radius: 12px;
+    }
+
+    QPushButton#primaryButton {
+        background-color: #f9e79f;
+        border-color: #f9e79f;
+        color: #2c3e50;
+        font-weight: bold;
+        min-width: 80px;
+        padding: 8px 16px;
+    }
+
+    QPushButton#primaryButton:hover {
+        background-color: #f7dc6f;
+        border-color: #f7dc6f;
+    }
+
+    QPushButton#primaryButton:pressed {
+        background-color: #f4d03f;
+    }
+
+    QPushButton#secondaryButton {
+        background-color: #404040;
+        border-color: #505050;
+        color: #ffffff;
+        font-weight: bold;
+        min-width: 80px;
+        padding: 8px 16px;
+    }
+
+    QPushButton#secondaryButton:hover {
+        background-color: #505050;
+        border-color: #606060;
+    }
+
+    QPushButton#secondaryButton:pressed {
+        background-color: #353535;
+    }
     """

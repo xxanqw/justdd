@@ -1,5 +1,15 @@
 import os
 import re
+import sys
+from pathlib import Path
+
+
+def resource_path(relative_path):
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    # Get the root directory of the application (parent of widgets directory)
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    return os.path.join(root_dir, relative_path)
 
 
 def format_time_display(seconds):
@@ -69,3 +79,43 @@ def get_default_download_dir():
 
     os.makedirs(default_dir, exist_ok=True)
     return default_dir
+
+
+def send_notification(title="Notification", message=""):
+    try:
+        from desktop_notifier import DesktopNotifier, Urgency, Icon
+
+        icon_path = Path(resource_path("images/icon.png"))
+        icon = Icon(path=icon_path)
+
+        notifier = DesktopNotifier(
+            app_name="JustDD", app_icon=icon, notification_limit=10
+        )
+
+        # Send notification asynchronously
+        import asyncio
+
+        async def send_async_notification():
+            await notifier.send(
+                title=title,
+                message=message,
+                urgency=Urgency.Normal,
+            )
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                asyncio.create_task(send_async_notification())
+            else:
+                asyncio.run(send_async_notification())
+        except RuntimeError:
+            asyncio.run(send_async_notification())
+
+    except ImportError:
+        print(f"{title}: {message}")
+    except Exception as e:
+        print(f"Notification failed: {e}")
+
+
+def play_notification_sound():
+    send_notification("ISO Downloader", "Download completed!")

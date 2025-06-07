@@ -1,13 +1,5 @@
 import sys
 import os
-
-
-def resource_path(relative_path):
-    if hasattr(sys, "_MEIPASS"):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.dirname(__file__), relative_path)
-
-
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -18,19 +10,21 @@ from PySide6.QtWidgets import (
     QLabel,
     QProgressBar,
     QFileDialog,
-    QMessageBox,
     QStackedWidget,
     QFrame,
     QSizePolicy,
     QListWidget,
-    QListWidgetItem,
+    QListWidgetItem
 )
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QPixmap, QPainter, QColor, QIcon
 from styles import get_etcher_style
 from widgets.logs_window import LogsWindow
 from widgets.iso_downloader_widget import IsoDownloaderWidget
 from widgets.about_widget import AboutWidget
+from widgets.custom_message_box import CustomMessageBox
+from widgets.utils import send_notification, resource_path
+from update_checker import UpdateChecker
 import subprocess
 import tempfile
 import re
@@ -1517,7 +1511,7 @@ class FlashPage(QWidget):
             self.status_label.setStyleSheet(
                 "font-size: 12pt; color: #e74c3c; font-weight: bold; margin: 10px 0; background-color: transparent; border: none;"
             )
-            QMessageBox.critical(self, "Error", f"Flash failed: {message}")
+            CustomMessageBox.critical(self, "Error", f"Flash failed: {message}")
 
     def is_flashing(self):
         return self.flashing
@@ -1599,10 +1593,20 @@ class EtcherWizardApp(QMainWindow):
 
         self.iso_downloader_widget = IsoDownloaderWidget()
 
-        self.about_widget = AboutWidget()
+        # Pass self as parent to center the dialog on main window
+        self.about_widget = AboutWidget(self)
+
+        # Initialize update checker
+        self.update_checker = UpdateChecker()
+        self.update_checker.update_available.connect(self._on_update_available)
+        self.update_checker.no_update.connect(self._on_no_update)
+        self.update_checker.check_failed.connect(self._on_update_check_failed)
 
         self.setup_ui()
         self.update_navigation_buttons()
+        
+        # Check for updates on startup (after a short delay)
+        QTimer.singleShot(2000, self._check_for_updates)
 
     def closeEvent(self, event):
         if self._shutdown_in_progress:
@@ -1611,17 +1615,23 @@ class EtcherWizardApp(QMainWindow):
 
         self._shutdown_in_progress = True
 
+        # Clean up update checker thread first
+        if self.update_checker:
+            try:
+                self.update_checker.cleanup_thread()
+            except:
+                pass
+
         if self.flash_worker and self.flash_worker.isRunning():
-            reply = QMessageBox.question(
+            reply = CustomMessageBox.question(
                 self,
                 "Flash in Progress",
                 "A flash operation is currently in progress. Are you sure you want to exit?\n\n"
                 "This will cancel the operation and may leave your drive in an unusable state.",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+                CustomMessageBox.Yes | CustomMessageBox.No,
             )
 
-            if reply == QMessageBox.StandardButton.No:
+            if reply == CustomMessageBox.No:
                 self._shutdown_in_progress = False
                 event.ignore()
                 return
@@ -1665,6 +1675,14 @@ class EtcherWizardApp(QMainWindow):
         try:
             if self.flash_worker:
                 self._force_cleanup_worker()
+
+            # Clean up update checker
+            if self.update_checker:
+                try:
+                    self.update_checker.cleanup_thread()
+                    self.update_checker = None
+                except:
+                    pass
 
             QApplication.processEvents()
 
@@ -1968,16 +1986,15 @@ class EtcherWizardApp(QMainWindow):
                 self.update_navigation_buttons()
 
     def start_flash(self):
-        reply = QMessageBox.warning(
+        reply = CustomMessageBox.warning(
             self,
             "Confirm Flash Operation",
             f"Are you absolutely sure you want to flash the image to {self.drive_path}?\n\n"
             f"This will DESTROY ALL DATA on the drive!",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
+            CustomMessageBox.Yes | CustomMessageBox.No,
         )
 
-        if reply == QMessageBox.StandardButton.Yes:
+        if reply == CustomMessageBox.Yes:
             self.flash_page.start_flash()
             self.update_navigation_buttons()
 
@@ -1993,18 +2010,17 @@ class EtcherWizardApp(QMainWindow):
 
     def cancel_flash(self):
         if self.flash_worker:
-            reply = QMessageBox.warning(
+            reply = CustomMessageBox.warning(
                 self,
                 "Cancel Flash Operation",
                 "⚠️ Are you sure you want to cancel the flash operation?\n\n"
                 "Cancelling during the flash process may leave your USB drive in a corrupted "
                 "or unusable state. You may need to reformat the drive to use it again.\n\n"
                 "Do you want to continue with cancellation?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
+                CustomMessageBox.Yes | CustomMessageBox.No,
             )
 
-            if reply == QMessageBox.StandardButton.No:
+            if reply == CustomMessageBox.No:
                 return
 
             self.log_message_safe(
@@ -2064,10 +2080,30 @@ class EtcherWizardApp(QMainWindow):
                 self.flash_worker.deleteLater()
                 self.flash_worker = None
 
+            # Send notifications based on flash result
             if success:
                 self.current_page = 3
                 self.stacked_widget.setCurrentWidget(self.success_page)
                 self.step_indicator.set_step(self.step_indicator.total_steps + 1)
+                
+                # Send success notification
+                send_notification(
+                    title="Flash Complete",
+                    message="USB drive has been successfully created!"
+                )
+            else:
+                # Send failure notification
+                send_notification(
+                    title="Flash Failed",
+                    message=f"Flash operation failed: {message}"
+                )
+                
+                # Show error dialog
+                CustomMessageBox.critical(
+                    self,
+                    "Flash Failed",
+                    f"Flash operation failed: {message}"
+                )
 
             self.update_navigation_buttons()
 
@@ -2112,9 +2148,34 @@ class EtcherWizardApp(QMainWindow):
         self.iso_downloader_widget.activateWindow()
 
     def show_about(self):
-        self.about_widget.show()
-        self.about_widget.raise_()
-        self.about_widget.activateWindow()
+        self.about_widget.exec()
+
+    def _check_for_updates(self):
+        try:
+            self.logs_window.append_log("Checking for updates...")
+            self.update_checker.check_for_updates()
+        except Exception as e:
+            self.logs_window.append_log(f"Update check initialization failed: {e}")
+
+    def _on_update_available(self, new_version, download_url):
+        self.logs_window.append_log(f"Update available: {new_version}")
+        
+        reply = CustomMessageBox.question(
+            self,
+            "Update Available",
+            f"A new version ({new_version}) is available! Would you like to download it now?",
+            CustomMessageBox.Yes | CustomMessageBox.No
+        )
+        
+        if reply == CustomMessageBox.Yes:
+            import webbrowser
+            webbrowser.open(download_url)
+
+    def _on_no_update(self):
+        self.logs_window.append_log("No updates available - you're running the latest version")
+
+    def _on_update_check_failed(self, error_message):
+        self.logs_window.append_log(f"Update check failed: {error_message}")
 
 
 if __name__ == "__main__":

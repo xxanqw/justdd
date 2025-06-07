@@ -13,6 +13,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        arch: [x86_64, aarch64]
     container:
       image: fedora:latest
 
@@ -56,7 +59,7 @@ jobs:
 
           License:        GPLv3
           URL:            https://github.com/xxanqw/justdd
-          BuildArch:      x86_64
+          BuildArch:      ${{ matrix.arch }}
 
           Requires:       ntfs-3g, dosfstools, rsync, polkit
 
@@ -104,7 +107,7 @@ jobs:
 
           %changelog
           * $(date '+%a %b %d %Y') GitHub Actions <actions@github.com> - ${{ steps.get_version.outputs.PACKAGE_VERSION }}-1
-          - Automated build from GitHub release
+          - Automated build from GitHub release for ${{ matrix.arch }}
           EOF
 
       - name: Build binary
@@ -118,16 +121,19 @@ jobs:
       - name: Build RPM package
         run: |
           rpmbuild -ba ~/rpmbuild/SPECS/justdd.spec
-          cp ~/rpmbuild/RPMS/x86_64/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}*.rpm ./
+          # Create a directory for artifacts
+          mkdir -p ./release-artifacts
+          # Copy the built RPM to the artifacts directory with a clear, arch-specific name
+          cp ~/rpmbuild/RPMS/${{ matrix.arch }}/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}*.rpm ./release-artifacts/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ matrix.arch }}.rpm
 
       - name: List built packages
         run: |
-          ls -la *.rpm
+          ls -la ./release-artifacts/*.rpm
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ./justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}*.rpm
+          files: ./release-artifacts/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ matrix.arch }}.rpm
           draft: false
           prerelease: false
