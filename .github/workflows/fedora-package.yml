@@ -31,16 +31,14 @@ jobs:
         run: |
           docker exec fedora-build dnf -y install git python3 python3-pip rpm-build rpmdevtools python3-devel ntfs-3g-devel dosfstools rsync polkit
 
-      - name: Install dependencies
-        run: |
-          dnf -y install git python3 python3-pip rpm-build rpmdevtools python3-devel ntfs-3g-devel dosfstools rsync polkit
-
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Extract version from PKGBUILD
         id: get_version
         run: |
+          VERSION=$(grep -E '^version\s*=' pyproject.toml | sed -E 's/version\s*=\s*"([^"]+)"/\1/')
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
       - name: Setup RPM build environment
         run: |
           docker exec fedora-build mkdir -p ~/rpmbuild/{SPECS,SOURCES,BUILD,RPMS,SRPMS}
@@ -51,10 +49,7 @@ jobs:
           docker exec fedora-build uv venv
           docker exec fedora-build bash -c "source ./.venv/bin/activate && uv sync --all-extras && pip install pyinstaller"
           uv venv
-          source ./.venv/bin/activate
-          uv sync --all-extras
-      - name: Create spec file
-        run: |
+          docker exec fedora-build bash -c "source ./.venv/bin/activate && uv sync --all-extras && pip install pyinstaller"
           docker exec fedora-build bash -c "cat > ~/rpmbuild/SPECS/justdd.spec << EOF
           Name:           justdd
           Version:        ${{ steps.get_version.outputs.PACKAGE_VERSION }}
@@ -122,26 +117,18 @@ jobs:
           cp images/icon.png ~/rpmbuild/SOURCES/justdd.png
       - name: Build RPM package
         run: |
-          docker exec fedora-build rpmbuild -ba ~/rpmbuild/SPECS/justdd.spec
-          # Create a directory for artifacts
           mkdir -p ./release-artifacts
+          docker exec fedora-build rpmbuild -bb ~/rpmbuild/SPECS/justdd.spec
           # Copy the built RPM to the artifacts directory with a clear, arch-specific name
           docker cp fedora-build:/root/rpmbuild/RPMS/${{ matrix.arch }}/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-1.fc*.rpm ./release-artifacts/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ matrix.arch }}.rpm
-          cp ~/rpmbuild/RPMS/${{ matrix.arch }}/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}*.rpm ./release-artifacts/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ matrix.arch }}.rpm
+
       - name: List built packages
         run: |
           ls -la ./release-artifacts/*.rpm
 
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
       - name: Cleanup container
         run: |
           docker stop fedora-build
           docker rm fedora-build
-          ls -la ./release-artifacts/*.rpm
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: ./release-artifacts/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ matrix.arch }}.rpm
-          draft: false
-          prerelease: false
