@@ -18,39 +18,42 @@ jobs:
         arch: [x86_64, aarch64]
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up container
         run: |
-          docker run -d --name fedora-build --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }} \
+          docker run -d --name fedora-build-${{ matrix.arch }} --platform linux/${{ matrix.arch == 'x86_64' && 'amd64' || 'arm64' }} \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             fedora:latest tail -f /dev/null
+
       - name: Install dependencies
         run: |
-          docker exec fedora-build dnf -y install git python3 python3-pip rpm-build rpmdevtools python3-devel ntfs-3g-devel dosfstools rsync polkit
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          docker exec fedora-build-${{ matrix.arch }} dnf -y install git python3 python3-pip rpm-build rpmdevtools python3-devel ntfs-3g-devel dosfstools rsync polkit
 
       - name: Extract version from PKGBUILD
         id: get_version
         run: |
           VERSION=$(grep -E '^version\s*=' pyproject.toml | sed -E 's/version\s*=\s*"([^"]+)"/\1/')
           echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
+
       - name: Setup RPM build environment
         run: |
-          docker exec fedora-build mkdir -p ~/rpmbuild/{SPECS,SOURCES,BUILD,RPMS,SRPMS}
+          docker exec fedora-build-${{ matrix.arch }} mkdir -p ~/rpmbuild/{SPECS,SOURCES,BUILD,RPMS,SRPMS}
 
       - name: Install uv and Python dependencies
         run: |
-          docker exec fedora-build pip install uv
-          docker exec fedora-build uv venv
-          docker exec fedora-build bash -c "source ./.venv/bin/activate && uv sync --all-extras && pip install pyinstaller"
-          uv venv
-          docker exec fedora-build bash -c "source ./.venv/bin/activate && uv sync --all-extras && pip install pyinstaller"
-          docker exec fedora-build bash -c "cat > ~/rpmbuild/SPECS/justdd.spec << EOF
+          docker exec fedora-build-${{ matrix.arch }} pip install uv
+          docker exec fedora-build-${{ matrix.arch }} uv venv
+          docker exec fedora-build-${{ matrix.arch }} bash -c "source ./.venv/bin/activate && uv sync --all-extras && pip install pyinstaller"
+
+      - name: Create RPM spec file
+        run: |
+          docker exec fedora-build-${{ matrix.arch }} bash -c "cat > ~/rpmbuild/SPECS/justdd.spec << 'EOF'
           Name:           justdd
           Version:        ${{ steps.get_version.outputs.PACKAGE_VERSION }}
           Release:        1%{?dist}
@@ -98,37 +101,58 @@ jobs:
           /usr/share/applications/justdd.desktop
 
           %post
-          echo "----------------------------------------------------------------------"
-          echo "NOTE: JustDD uses polkit for privilege escalation."
-          echo "If polkit is not enabled by default in your distribution, you may"
-          echo "need to start and enable the polkit service."
-          echo "----------------------------------------------------------------------"
+          echo \"----------------------------------------------------------------------\"
+          echo \"NOTE: JustDD uses polkit for privilege escalation.\"
+          echo \"If polkit is not enabled by default in your distribution, you may\"
+          echo \"need to start and enable the polkit service.\"
+          echo \"----------------------------------------------------------------------\"
 
           %changelog
           * $(date '+%a %b %d %Y') GitHub Actions <actions@github.com> - ${{ steps.get_version.outputs.PACKAGE_VERSION }}-1
           - Automated build from GitHub release for ${{ matrix.arch }}
+          EOF"
+
       - name: Build binary
         run: |
-          docker exec fedora-build bash -c "source ./.venv/bin/activate && pyinstaller --onefile --add-data 'images/icon.png:images' --name justdd app.py"
-          docker exec fedora-build chmod +x dist/justdd
-          docker exec fedora-build cp dist/justdd ~/rpmbuild/SOURCES/
-          docker exec fedora-build cp images/icon.png ~/rpmbuild/SOURCES/justdd.png
-          cp dist/justdd ~/rpmbuild/SOURCES/
-          cp images/icon.png ~/rpmbuild/SOURCES/justdd.png
+          docker exec fedora-build-${{ matrix.arch }} bash -c "source ./.venv/bin/activate && pyinstaller --onefile --add-data 'images/icon.png:images' --name justdd app.py"
+          docker exec fedora-build-${{ matrix.arch }} chmod +x dist/justdd
+          docker exec fedora-build-${{ matrix.arch }} cp dist/justdd ~/rpmbuild/SOURCES/
+          docker exec fedora-build-${{ matrix.arch }} cp images/icon.png ~/rpmbuild/SOURCES/justdd.png
+
       - name: Build RPM package
         run: |
           mkdir -p ./release-artifacts
-          docker exec fedora-build rpmbuild -bb ~/rpmbuild/SPECS/justdd.spec
-          # Copy the built RPM to the artifacts directory with a clear, arch-specific name
-          docker cp fedora-build:/root/rpmbuild/RPMS/${{ matrix.arch }}/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-1.fc*.rpm ./release-artifacts/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ matrix.arch }}.rpm
+          docker exec fedora-build-${{ matrix.arch }} rpmbuild -bb ~/rpmbuild/SPECS/justdd.spec
+          docker cp fedora-build-${{ matrix.arch }}:/root/rpmbuild/RPMS/${{ matrix.arch }}/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-1.fc*.rpm ./release-artifacts/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ matrix.arch }}.rpm
 
       - name: List built packages
         run: |
           ls -la ./release-artifacts/*.rpm
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
       - name: Cleanup container
         run: |
-          docker stop fedora-build
-          docker rm fedora-build
+          docker stop fedora-build-${{ matrix.arch }}
+          docker rm fedora-build-${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-packages-${{ matrix.arch }}
+          path: ./release-artifacts/*.rpm
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: ./release-artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ./release-artifacts/*.rpm
