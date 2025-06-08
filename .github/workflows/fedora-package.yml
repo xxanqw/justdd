@@ -18,8 +18,12 @@ jobs:
         arch: [x86_64, aarch64]
     container:
       image: fedora:latest
+      options: --platform ${{ (matrix.arch == 'aarch64' && 'linux/arm64') || 'linux/amd64' }}
 
     steps:
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Update system
         run: dnf -y update
 
