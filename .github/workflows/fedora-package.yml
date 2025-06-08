@@ -18,7 +18,7 @@ jobs:
         arch: [x86_64, aarch64]
     container:
       image: fedora:latest
-      options: --platform ${{ (matrix.arch == 'aarch64' && 'linux/arm64') || 'linux/amd64' }}
+      options: ${{ matrix.arch == 'aarch64' && '--platform linux/arm64' || '--platform linux/amd64' }}
 
     steps:
       - name: Set up QEMU
