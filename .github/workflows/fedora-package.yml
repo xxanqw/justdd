@@ -53,7 +53,7 @@ jobs:
 
       - name: Create RPM spec file
         run: |
-          docker exec fedora-build-${{ matrix.arch }} bash -c "cat > ~/rpmbuild/SPECS/justdd.spec << 'EOF'
+          cat > justdd.spec << 'EOF'
           Name:           justdd
           Version:        ${{ steps.get_version.outputs.PACKAGE_VERSION }}
           Release:        1%{?dist}
@@ -101,16 +101,17 @@ jobs:
           /usr/share/applications/justdd.desktop
 
           %post
-          echo \"----------------------------------------------------------------------\"
-          echo \"NOTE: JustDD uses polkit for privilege escalation.\"
-          echo \"If polkit is not enabled by default in your distribution, you may\"
-          echo \"need to start and enable the polkit service.\"
-          echo \"----------------------------------------------------------------------\"
+          echo "----------------------------------------------------------------------"
+          echo "NOTE: JustDD uses polkit for privilege escalation."
+          echo "If polkit is not enabled by default in your distribution, you may"
+          echo "need to start and enable the polkit service."
+          echo "----------------------------------------------------------------------"
 
           %changelog
           * $(date '+%a %b %d %Y') GitHub Actions <actions@github.com> - ${{ steps.get_version.outputs.PACKAGE_VERSION }}-1
           - Automated build from GitHub release for ${{ matrix.arch }}
-          EOF"
+          EOF
+          docker cp justdd.spec fedora-build-${{ matrix.arch }}:/root/rpmbuild/SPECS/
 
       - name: Build binary
         run: |
