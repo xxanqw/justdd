@@ -7,15 +7,18 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QFileDialog,
     QProgressBar,
-    QComboBox, 
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt, QStandardPaths, QModelIndex, QThread, Signal, QObject
-from PySide6.QtGui import QStandardItemModel, QStandardItem
+from PySide6.QtGui import QStandardItemModel, QStandardItem, QFont, QPixmap
 import os
 
 from .download_worker import IsoDownloadWorker
 from .distro_config import DISTRO_CONFIG
-from .utils import format_time_display, clean_filename, send_notification
+from .utils import format_time_display, clean_filename, send_notification, resource_path
 
 from .fetchers.ubuntu_fetcher import fetch_ubuntu_versions, fetch_ubuntu_isos
 from .fetchers.fedora_fetcher import fetch_fedora_versions, fetch_fedora_isos
@@ -153,7 +156,6 @@ class IsoFetcherWorker(QObject):
 
 
 class IsoDownloaderWidget(QWidget):
-    # A widget for downloading ISO images of various Linux distributions.
     def __init__(self, parent=None):
         super().__init__(parent)
         self.download_thread = None
@@ -164,96 +166,215 @@ class IsoDownloaderWidget(QWidget):
         self.version_fetch_worker = None
         self.iso_fetch_thread = None
         self.iso_fetch_worker = None
-        self.version_model = QStandardItemModel(self) # Keep for version_view
-        self.iso_model = QStandardItemModel(self)     # Keep for iso_view
+        self.version_model = QStandardItemModel(self)
+        self.iso_model = QStandardItemModel(self)
         self.setup_ui()
         self.load_default_download_location()
 
     def setup_ui(self):
-        # Set up the user interface components.
         self.setWindowTitle("JustDD - ISO Downloader")
-        self.setMinimumSize(600, 200)
+        self.setMinimumSize(700, 500)
+        self.resize(800, 600)
+        
+        # Remove local stylesheet - use global styles only
+        self.setStyleSheet("")
+
         main_layout = QVBoxLayout(self)
-        main_layout.setSpacing(10)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(20)
 
-        distro_layout = QHBoxLayout()
-        distro_label = QLabel("Linux Distribution:")
-        self.distro_combo = QComboBox(self)  # Changed to QComboBox
-        self.distro_combo.setPlaceholderText("Search distributions...") # Standard placeholder
-        # self.distro_model is no longer set here for distro_combo
+        # Header with proper spacing
+        header_layout = QHBoxLayout()
+        header_layout.setSpacing(15)
+        
+        # Icon
+        icon_label = QLabel("💿")
+        icon_label.setStyleSheet("font-size: 32pt; border: none; background: transparent;")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setFixedSize(48, 48)
+        
+        # Title and subtitle container
+        title_container = QVBoxLayout()
+        title_container.setSpacing(0)
+        
+        title_label = QLabel("ISO Downloader")
+        title_label.setProperty("class", "title")
+        
+        subtitle_label = QLabel("Download Linux distributions directly")
+        subtitle_label.setProperty("class", "subtitle")
+        
+        title_container.addWidget(title_label)
+        title_container.addWidget(subtitle_label)
+        
+        header_layout.addWidget(icon_label)
+        header_layout.addLayout(title_container)
+        header_layout.addStretch()
+        
+        main_layout.addLayout(header_layout)
+
+        # Selection Section with improved layout
+        selection_frame = QFrame()
+        selection_frame.setObjectName("selectionFrame")
+        selection_layout = QVBoxLayout(selection_frame)
+        selection_layout.setContentsMargins(25, 25, 25, 25)
+        selection_layout.setSpacing(20)
+
+        # Grid layout with consistent spacing
+        grid_layout = QGridLayout()
+        grid_layout.setSpacing(15)
+        grid_layout.setColumnStretch(1, 1)
+        grid_layout.setRowMinimumHeight(0, 50)  # Distribution row
+        grid_layout.setRowMinimumHeight(1, 50)  # Version row
+        grid_layout.setRowMinimumHeight(2, 50)  # ISO row
+        grid_layout.setRowMinimumHeight(3, 50)  # Destination row
+
+        # Distribution selection
+        distro_label = QLabel("Distribution:")
+        distro_label.setProperty("class", "field-label")
+        distro_label.setFixedWidth(100)
+        distro_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        
+        self.distro_combo = QComboBox()
+        self.distro_combo.setMinimumHeight(36)
+        self.distro_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.populate_distro_combo()
-        distro_layout.addWidget(distro_label)
-        distro_layout.addWidget(self.distro_combo, 1)
-        main_layout.addLayout(distro_layout)
+        
+        grid_layout.addWidget(distro_label, 0, 0, Qt.AlignmentFlag.AlignVCenter)
+        grid_layout.addWidget(self.distro_combo, 0, 1)
 
-        version_layout = QHBoxLayout()
+        # Version selection
         version_label = QLabel("Version:")
-        # self.version_model is already initialized in __init__
-        self.version_view = QComboBox(self)  # Changed to QComboBox
-        self.version_view.setModel(self.version_model) # Still using model
-        self.version_view.setPlaceholderText("Search versions...")
-        version_layout.addWidget(version_label)
-        version_layout.addWidget(self.version_view, 1)
-        main_layout.addLayout(version_layout)
+        version_label.setProperty("class", "field-label")
+        version_label.setFixedWidth(100)
+        version_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        
+        self.version_view = QComboBox()
+        self.version_view.setModel(self.version_model)
+        self.version_view.setMinimumHeight(36)
+        self.version_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.version_view.setEnabled(False)
+        
+        grid_layout.addWidget(version_label, 1, 0, Qt.AlignmentFlag.AlignVCenter)
+        grid_layout.addWidget(self.version_view, 1, 1)
 
-        iso_layout = QHBoxLayout()
+        # ISO selection
         iso_label = QLabel("ISO File:")
-        # self.iso_model is already initialized in __init__
-        self.iso_view = QComboBox(self)  # Changed to QComboBox
-        self.iso_view.setModel(self.iso_model) # Still using model
-        self.iso_view.setPlaceholderText("Search ISOs...")
-        iso_layout.addWidget(iso_label)
-        iso_layout.addWidget(self.iso_view, 1)
-        main_layout.addLayout(iso_layout)
+        iso_label.setProperty("class", "field-label")
+        iso_label.setFixedWidth(100)
+        iso_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        
+        self.iso_view = QComboBox()
+        self.iso_view.setModel(self.iso_model)
+        self.iso_view.setMinimumHeight(36)
+        self.iso_view.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.iso_view.setEnabled(False)
+        
+        grid_layout.addWidget(iso_label, 2, 0, Qt.AlignmentFlag.AlignVCenter)
+        grid_layout.addWidget(self.iso_view, 2, 1)
 
-        dest_layout = QHBoxLayout()
+        # Destination selection
         dest_label = QLabel("Destination:")
-        self.dest_edit = QLineEdit(self)
+        dest_label.setProperty("class", "field-label")
+        dest_label.setFixedWidth(100)
+        dest_label.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+        
+        dest_layout = QHBoxLayout()
+        dest_layout.setSpacing(10)
+        
+        self.dest_edit = QLineEdit()
         self.dest_edit.setReadOnly(True)
+        self.dest_edit.setMinimumHeight(36)
+        self.dest_edit.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        
         browse_button = QPushButton("Browse...")
+        browse_button.setFixedWidth(100)
+        browse_button.setMinimumHeight(36)
         browse_button.clicked.connect(self.browse_dest)
-        dest_layout.addWidget(dest_label)
-        dest_layout.addWidget(self.dest_edit, 1)
+        
+        dest_layout.addWidget(self.dest_edit)
         dest_layout.addWidget(browse_button)
-        main_layout.addLayout(dest_layout)
+        
+        grid_layout.addWidget(dest_label, 3, 0, Qt.AlignmentFlag.AlignVCenter)
+        grid_layout.addLayout(dest_layout, 3, 1)
 
-        progress_layout = QVBoxLayout()
-        self.progress_bar = QProgressBar(self)
+        selection_layout.addLayout(grid_layout)
+        main_layout.addWidget(selection_frame)
+
+        # Progress Section
+        progress_frame = QFrame()
+        progress_frame.setProperty("class", "section")
+        progress_layout = QVBoxLayout(progress_frame)
+        progress_layout.setContentsMargins(25, 25, 25, 25)
+        progress_layout.setSpacing(15)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
-        progress_info_layout = QHBoxLayout()
-        self.status_label = QLabel("Ready")
+        self.progress_bar.setMinimumHeight(28)
+        
+        # Status information
+        status_layout = QHBoxLayout()
+        status_layout.setSpacing(15)
+        
+        self.status_label = QLabel("Ready to download")
+        self.status_label.setProperty("class", "status")
+        
         self.time_label = QLabel("")
-        progress_info_layout.addWidget(self.status_label, 1)
-        progress_info_layout.addWidget(self.time_label)
-        progress_layout.addWidget(self.progress_bar)
-        progress_layout.addLayout(progress_info_layout)
-        main_layout.addLayout(progress_layout)
+        self.time_label.setProperty("class", "status-secondary")
+        self.time_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        
+        status_layout.addWidget(self.status_label, 1)
+        status_layout.addWidget(self.time_label)
 
+        progress_layout.addWidget(self.progress_bar)
+        progress_layout.addLayout(status_layout)
+        main_layout.addWidget(progress_frame)
+
+        # Action buttons with proper spacing
         buttons_layout = QHBoxLayout()
-        self.refresh_button = QPushButton("Refresh")
+        buttons_layout.setContentsMargins(5, 15, 5, 15)
+        buttons_layout.setSpacing(15)
+
+        # Left side buttons
+        self.refresh_button = QPushButton("🔄 Refresh")
+        self.refresh_button.setMinimumHeight(40)
+        self.refresh_button.setFixedWidth(120)
         self.refresh_button.clicked.connect(self.refresh_versions)
-        self.download_button = QPushButton("Download")
-        self.download_button.clicked.connect(self.download_iso)
+
+        buttons_layout.addWidget(self.refresh_button)
+        buttons_layout.addStretch()
+
+        # Right side buttons
         self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setProperty("class", "danger")
+        self.cancel_button.setMinimumHeight(40)
+        self.cancel_button.setFixedWidth(100)
         self.cancel_button.clicked.connect(self.cancel_download)
         self.cancel_button.setEnabled(False)
-        buttons_layout.addWidget(self.refresh_button)
-        buttons_layout.addStretch(1)
-        buttons_layout.addWidget(self.download_button)
+        
+        self.download_button = QPushButton("📥 Download")
+        self.download_button.setProperty("class", "primary")
+        self.download_button.setMinimumHeight(40)
+        self.download_button.setFixedWidth(130)
+        self.download_button.clicked.connect(self.download_iso)
+        self.download_button.setEnabled(False)
+        
         buttons_layout.addWidget(self.cancel_button)
+        buttons_layout.addWidget(self.download_button)
+
+        main_layout.addWidget(QWidget())  # Add some spacing
         main_layout.addLayout(buttons_layout)
 
+        # Connect signals
         self.distro_combo.currentIndexChanged.connect(self.on_distro_changed)
         self.version_view.currentIndexChanged.connect(self.on_version_changed)
         self.iso_view.currentIndexChanged.connect(self.on_iso_selected)
 
-        self._update_ui_state(loading=False, ready_message="Select a distribution.")
+        self._update_ui_state(loading=False, ready_message="Select a distribution to begin.")
 
     def populate_distro_combo(self):
-        # Populate the distro combo box with categorized items.
         self.distro_combo.clear()
-        # Add a placeholder item that signifies no selection
         self.distro_combo.addItem("Select a distribution...", None)
 
         categories_data = {
@@ -265,9 +386,8 @@ class IsoDownloaderWidget(QWidget):
             "Other": [],
         }
 
-        # Assign distributions to categories_data (just names and config for now)
         for distro_name, config in DISTRO_CONFIG.items():
-            distro_data = distro_name # This is the key for DISTRO_CONFIG
+            distro_data = distro_name
 
             if "ubuntu" in config["type"] or "ubuntu" in distro_name.lower():
                 categories_data["Ubuntu Family"].append((distro_name, distro_data))
@@ -290,27 +410,26 @@ class IsoDownloaderWidget(QWidget):
             else:
                 categories_data["Other"].append((distro_name, distro_data))
 
-        # Add categories and items to the combo box model
         for category_name, items_data in categories_data.items():
             if not items_data:
                 continue
 
-            # Add category header as a disabled item
-            self.distro_combo.addItem(f"--- {category_name} ---")
+            # Add category separator
+            self.distro_combo.addItem(f"─── {category_name} ───")
             model = self.distro_combo.model()
             last_item_idx = self.distro_combo.count() - 1
-            if isinstance(model, QStandardItemModel): # Check if it's QStandardItemModel
-                 item = model.item(last_item_idx)
-                 if item:
+            if isinstance(model, QStandardItemModel):
+                item = model.item(last_item_idx)
+                if item:
                     item.setEnabled(False)
-            else: # For default model, set flags
-                index = model.index(last_item_idx, 0)
-                model.setData(index, 0, Qt.ItemDataRole.UserRole - 1) # Make it non-selectable by clearing flags
+                    # Style category headers
+                    item.setForeground(QStandardItem().foreground())
+                    font = QFont()
+                    font.setBold(True)
+                    item.setFont(font)
 
             for item_name, item_data_payload in items_data:
-                self.distro_combo.addItem(item_name, item_data_payload) # UserData is the distro_key
-
-        # self.distro_combo.expand_all() # Not applicable for QComboBox
+                self.distro_combo.addItem(f"  {item_name}", item_data_payload)
 
     def load_default_download_location(self):
         # Set the default download location to Downloads folder.
@@ -338,12 +457,15 @@ class IsoDownloaderWidget(QWidget):
         # We rely on currentData() to get the actual payload.
         distro_name_key = self.distro_combo.currentData(Qt.UserRole)
 
-        if index < 0 or distro_name_key is None: # Handles placeholder or unselected state
+        if index < 0 or distro_name_key is None:
             self.version_model.clear()
             self.iso_model.clear()
-            self._update_ui_state(loading=False, ready_message="Select a distribution.")
+            self.version_view.setEnabled(False)
+            self.iso_view.setEnabled(False)
+            self._update_ui_state(loading=False, ready_message="Select a distribution to begin.")
             return
 
+        self.version_view.setEnabled(True)
         self.refresh_versions()
 
     def refresh_versions(self):
@@ -407,16 +529,27 @@ class IsoDownloaderWidget(QWidget):
 
         if not version_data or not isinstance(version_data, dict):
             self.iso_model.clear()
+            self.iso_view.setEnabled(False)
             self._update_ui_state(
-                loading=False, error_message="Select a valid version to see ISOs."
+                loading=False, ready_message="Select a version to see available ISOs."
             )
             return
 
+        self.iso_view.setEnabled(True)
         self.update_iso_list()
 
     def on_iso_selected(self, index: int):
-        # Handles ISO selection change.
-        self._update_ui_state(loading=False)
+        iso_data = self.iso_view.currentData(Qt.UserRole)
+        dest_valid = self.dest_edit.text().strip() and os.path.isdir(self.dest_edit.text())
+        can_download = (
+            iso_data is not None and dest_valid
+        )
+        self.download_button.setEnabled(can_download)
+        
+        if can_download:
+            self._update_ui_state(loading=False, ready_message="Ready to download.")
+        else:
+            self._update_ui_state(loading=False, ready_message="Select an ISO file to download.")
 
     def update_iso_list(self):
         # Update the ISO file list for the selected version.
@@ -542,15 +675,18 @@ class IsoDownloaderWidget(QWidget):
         if success:
             self.progress_bar.setValue(100)
             filename = os.path.basename(self.currently_downloaded_file)
-            self.status_label.setText(f"Download completed: {filename}")
-            # Send custom notification on successful download
+            self.status_label.setText(f"✅ Download completed: {filename}")
+            self.status_label.setStyleSheet("color: #27ae60; font-weight: bold;")
             send_notification(
-                title="ISO Downloader", 
-                message=f"Download completed: {filename}",
+                title="ISO Download Complete", 
+                message=f"Successfully downloaded {filename}",
             )
+            self.time_label.setText("Download complete!")
         else:
             self.progress_bar.setValue(0)
-            self.status_label.setText(f"Download failed: {message}")
+            self.status_label.setText(f"❌ Download failed: {message}")
+            self.status_label.setStyleSheet("color: #e74c3c; font-weight: bold;")
+            self.time_label.setText("")
 
         self.currently_downloaded_file = None
 
@@ -631,24 +767,110 @@ class IsoDownloaderWidget(QWidget):
     def _update_ui_state(
         self, loading, status_message=None, ready_message=None, error_message=None
     ):
+        # Update UI state based on current operation
         self.distro_combo.setEnabled(not loading)
-        self.version_view.setEnabled(not loading)
-        self.iso_view.setEnabled(not loading)
-        self.refresh_button.setEnabled(not loading)
+        self.version_view.setEnabled(not loading and self.version_model.rowCount() > 0)
+        self.iso_view.setEnabled(not loading and self.iso_model.rowCount() > 0)
+        self.refresh_button.setEnabled(not loading and self.distro_combo.currentData() is not None)
 
+        # Enable download only when everything is ready
+        iso_data = self.iso_view.currentData(Qt.UserRole)
+        dest_valid = self.dest_edit.text().strip() and os.path.isdir(self.dest_edit.text())
         can_download = (
             not loading
-            and self.iso_model.rowCount() > 0
-            and self.iso_view.currentIndex() >= 0
+            and iso_data is not None
+            and dest_valid
         )
         self.download_button.setEnabled(can_download)
 
+        # Update status message
         if loading:
             self.status_label.setText(status_message or "Loading...")
+            self.status_label.setStyleSheet("color: #f9e79f;")
         elif error_message:
-            self.status_label.setText(error_message)
+            self.status_label.setText(f"❌ {error_message}")
+            self.status_label.setStyleSheet("color: #e74c3c;")
         elif ready_message:
-            self.status_label.setText(ready_message)
+            self.status_label.setText(f"✓ {ready_message}")
+            self.status_label.setStyleSheet("color: #27ae60;")
+        else:
+            self.status_label.setText("Ready")
+            self.status_label.setStyleSheet("color: #ffffff;")
+
+    def _on_versions_fetched(self, versions_data, distro_name_from_worker):
+        if versions_data is not None and len(versions_data) > 0:
+            self.version_model.clear()
+            for version_info in versions_data:
+                item = QStandardItem(version_info["name"])
+                item.setData(version_info, Qt.UserRole)
+                self.version_model.appendRow(item)
+
+            self.version_view.setCurrentIndex(0)
+            self.version_view.setEnabled(True)
+            self._update_ui_state(
+                loading=False,
+                ready_message=f"Found {len(versions_data)} versions for {distro_name_from_worker}."
+            )
+        else:
+            self.version_view.setEnabled(False)
+            if self.version_fetch_worker and not self.version_fetch_worker._is_running:
+                self._update_ui_state(
+                    loading=False,
+                    ready_message=f"Version fetching cancelled for {distro_name_from_worker}.",
+                )
+            else:
+                self._update_ui_state(
+                    loading=False,
+                    error_message=f"No versions found for {distro_name_from_worker}.",
+                )
+
+    def _on_isos_fetched(self, isos_data):
+        distro_name = self.distro_combo.currentData(Qt.UserRole)
+        version_data = self.version_view.currentData(Qt.UserRole)
+        version_name = (
+            version_data.get("name", "selected version")
+            if isinstance(version_data, dict)
+            else "selected version"
+        )
+
+        if isos_data and len(isos_data) > 0:
+            self.iso_model.clear()
+            for iso_info in isos_data:
+                item = QStandardItem(iso_info["name"])
+                item.setData(iso_info, Qt.UserRole)
+                self.iso_model.appendRow(item)
+
+            self.iso_view.setCurrentIndex(0)
+            self.iso_view.setEnabled(True)
+            self._update_ui_state(
+                loading=False,
+                ready_message=f"Found {len(isos_data)} ISOs for {distro_name} {version_name}.",
+            )
+        else:
+            self.iso_view.setEnabled(False)
+            if self.iso_fetch_worker and not self.iso_fetch_worker._is_running:
+                self._update_ui_state(
+                    loading=False, ready_message="ISO fetching cancelled."
+                )
+            else:
+                self._update_ui_state(
+                    loading=False,
+                    error_message=f"No ISOs found for {distro_name} {version_name}.",
+                )
+
+        self._on_thread_finished_cleanup("iso")
+
+    def _on_fetch_error(self, error_message, context_or_thread_type):
+        thread_type = context_or_thread_type
+        if context_or_thread_type == "versions":
+            thread_type = "version"
+        elif context_or_thread_type == "isos":
+            thread_type = "iso"
+
+        self.status_label.setText(f"Error: {error_message}")
+        self._update_ui_state(
+            loading=False, error_message=f"Error ({thread_type}): {error_message}"
+        )
 
     def _on_thread_finished_cleanup(self, thread_type):
         thread_attr = f"{thread_type}_fetch_thread"
@@ -671,86 +893,3 @@ class IsoDownloaderWidget(QWidget):
 
         setattr(self, thread_attr, None)
         setattr(self, worker_attr, None)
-
-    def _on_versions_fetched(self, versions_data, distro_name_from_worker):
-        if versions_data is not None:
-            self.version_model.clear()
-            for version_info in versions_data:
-                item = QStandardItem(version_info["name"])
-                item.setData(version_info, Qt.UserRole)
-                self.version_model.appendRow(item)
-
-            if self.version_model.rowCount() > 0:
-                self.version_view.setCurrentIndex(0) # QComboBox will use model's first item
-            else:
-                self._update_ui_state(
-                    loading=False,
-                    error_message=f"No versions found for {distro_name_from_worker}.",
-                )
-        else:
-            if self.version_fetch_worker and not self.version_fetch_worker._is_running:
-                self._update_ui_state(
-                    loading=False,
-                    ready_message=f"Version fetching cancelled for {distro_name_from_worker}.",
-                )
-            else:
-                self._update_ui_state(
-                    loading=False,
-                    error_message=f"No versions data received for {distro_name_from_worker}.",
-                )
-
-        if not (versions_data and self.version_model.rowCount() > 0):
-            self._update_ui_state(loading=False)
-
-    def _on_isos_fetched(self, isos_data):
-        distro_name = self.distro_combo.currentData(Qt.UserRole)
-        version_data = self.version_view.currentData(Qt.UserRole) # QComboBox.currentData()
-        version_name = (
-            version_data.get("name", "selected version")
-            if isinstance(version_data, dict) # Ensure version_data is a dict
-            else "selected version"
-        )
-
-        if isos_data:
-            self.iso_model.clear()
-            for iso_info in isos_data:
-                item = QStandardItem(iso_info["name"])
-                item.setData(iso_info, Qt.UserRole)
-                self.iso_model.appendRow(item)
-
-            if self.iso_model.rowCount() > 0:
-                self.iso_view.setCurrentIndex(0) # QComboBox will use model's first item
-                self._update_ui_state(
-                    loading=False,
-                    ready_message=f"Found {self.iso_model.rowCount()} ISOs for {distro_name} {version_name}.",
-                )
-            else:
-                self._update_ui_state(
-                    loading=False,
-                    error_message=f"No ISOs found for {distro_name} {version_name}.",
-                )
-        else:
-            if self.iso_fetch_worker and not self.iso_fetch_worker._is_running:
-                self._update_ui_state(
-                    loading=False, ready_message="ISO fetching cancelled."
-                )
-            else:
-                self._update_ui_state(
-                    loading=False,
-                    error_message=f"No ISOs found or error for {distro_name} {version_name}.",
-                )
-
-        self._on_thread_finished_cleanup("iso")
-        self._update_ui_state(loading=False)
-
-    def _on_fetch_error(self, error_message, context_or_thread_type):
-        thread_type = context_or_thread_type
-        if context_or_thread_type == "versions":
-            thread_type = "version"
-        elif context_or_thread_type == "isos":
-            thread_type = "iso"
-
-        self.status_label.setText(f"Error: {error_message}")
-        self._update_ui_state(
-            loading=False, error_message=f"Error ({thread_type}): {error_message}"
-        )
