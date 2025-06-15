@@ -28,6 +28,13 @@ jobs:
           useradd -m builder
           echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
+      - name: Install yay
+        run: |
+          cd /tmp
+          sudo -u builder git clone https://aur.archlinux.org/yay.git
+          cd yay
+          sudo -u builder makepkg -si --noconfirm
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -47,7 +54,7 @@ jobs:
       - name: Build package
         run: |
           cd /home/builder/build
-          sudo -u builder bash -c "PATH=$PATH:/home/builder/.local/bin makepkg -s --noconfirm"
+          sudo -u builder bash -c "yay -S --noconfirm --needed --batchinstall $(makepkg --printsrcinfo | awk '/depends =/ {print $3}') && makepkg -s --noconfirm"
 
       - name: List built packages
         run: |
