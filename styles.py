@@ -65,6 +65,16 @@ def get_etcher_style():
         border-color: #c0392b;
     }
 
+    QPushButton.danger:pressed {
+        background-color: #a93226;
+    }
+
+    QPushButton.danger:disabled {
+        background-color: #2d2d2d;
+        color: #666666;
+        border-color: #3d3d3d;
+    }
+
     /* Progress Bar */
     QProgressBar {
         border: 2px solid #404040;
@@ -85,9 +95,9 @@ def get_etcher_style():
     /* Labels */
     QLabel {
         color: #ffffff;
-        border: none; /* Ensure QLabels have no border by default */
-        background-color: transparent; /* Ensure no background color by default */
-        padding: 0px; /* Ensure no padding by default */
+        border: none;
+        background-color: transparent;
+        padding: 0px;
     }
 
     .title {
@@ -133,35 +143,108 @@ def get_etcher_style():
         color: #cccccc;
     }
 
-    /* Combo Box */
+    /* Combo Box - Enhanced Styling */
     QComboBox {
         background-color: #404040;
         border: 1px solid #505050;
         border-radius: 6px;
-        padding: 8px;
+        padding: 8px 12px;
         min-width: 200px;
         min-height: 20px;
+        color: #ffffff;
+        font-size: 11pt;
     }
 
     QComboBox:hover {
-        border-color: #606060;
+        border-color: #f9e79f;
+        background-color: #505050;
+    }
+
+    QComboBox:focus {
+        border-color: #f9e79f;
+        background-color: #505050;
+    }
+
+    QComboBox:disabled {
+        background-color: #2d2d2d;
+        color: #666666;
+        border-color: #3d3d3d;
     }
 
     QComboBox::drop-down {
         border: none;
-        width: 20px;
+        width: 25px;
+        background-color: transparent;
+        subcontrol-origin: padding;
+        subcontrol-position: center right;
     }
 
     QComboBox::down-arrow {
-        width: 12px;
-        height: 12px;
+        image: none;
+        border: 2px solid #888888;
+        border-top: none;
+        border-left: none;
+        width: 6px;
+        height: 6px;
+        margin-right: 8px;
     }
 
+    QComboBox::down-arrow:hover {
+        border-color: #f9e79f;
+    }
+
+    QComboBox::down-arrow:disabled {
+        border-color: #555555;
+    }
+
+    /* Combo Box Dropdown - Modern Design */
     QComboBox QAbstractItemView {
-        background-color: #404040;
-        border: 1px solid #505050;
+        background-color: #353535;
+        border: 2px solid #f9e79f;
+        border-radius: 8px;
         selection-background-color: #f9e79f;
         selection-color: #2c3e50;
+        outline: none;
+        color: #ffffff;
+        padding: 8px;
+        font-size: 11pt;
+        show-decoration-selected: 1;
+        alternate-background-color: #404040;
+    }
+
+    QComboBox QAbstractItemView::item {
+        background-color: transparent;
+        border: none;
+        padding: 12px 16px;
+        margin: 2px 4px;
+        border-radius: 6px;
+        min-height: 20px;
+        color: #ffffff;
+    }
+
+    QComboBox QAbstractItemView::item:hover {
+        background-color: #505050;
+        color: #ffffff;
+        border: 1px solid #606060;
+    }
+
+    QComboBox QAbstractItemView::item:selected {
+        background-color: #f9e79f;
+        color: #2c3e50;
+        font-weight: bold;
+        border: 1px solid #f4d03f;
+    }
+
+    QComboBox QAbstractItemView::item:disabled {
+        color: #f9e79f;
+        background-color: #2d2d2d;
+        font-style: normal;
+        font-weight: bold;
+        text-align: center;
+        border-top: 1px solid #505050;
+        border-bottom: 1px solid #505050;
+        margin: 6px 2px;
+        padding: 8px 16px;
     }
 
     /* Text Edit (for logs) */
@@ -262,5 +345,51 @@ def get_etcher_style():
 
     QPushButton#secondaryButton:pressed {
         background-color: #353535;
+    }
+
+    /* Frame Styling for ISO Downloader */
+    QFrame#selectionFrame {
+        background-color: #2d2d2d;
+        border: 1px solid #404040;
+        border-radius: 8px;
+        margin: 2px;
+    }
+
+    QFrame#progressFrame {
+        background-color: #2d2d2d;
+        border: 1px solid #404040;
+        border-radius: 8px;
+        margin: 2px;
+    }
+
+    /* Partition Scheme Selection Styling */
+    QPushButton[checkable="true"] {
+        background-color: #404040;
+        border: 2px solid #505050;
+        border-radius: 8px;
+        padding: 0px;
+        text-align: center;
+        font-weight: normal;
+        min-height: 100px;
+    }
+
+    QPushButton[checkable="true"]:hover {
+        background-color: #505050;
+        border-color: #f9e79f;
+    }
+
+    QPushButton[checkable="true"]:checked {
+        background-color: #3d3d2a;
+        border-color: #f9e79f;
+        border-width: 3px;
+    }
+
+    /* Ensure labels inside checkable buttons have no borders and proper spacing */
+    QPushButton[checkable="true"] QLabel {
+        background-color: transparent;
+        border: none;
+        margin: 0;
+        padding: 2px;
+        line-height: 1.4;
     }
     """
