@@ -53,7 +53,7 @@
 ### 🪟 Windows USB Preparation
 
 - **Intelligent dual-partition setup** (FAT32 boot + NTFS install)
-- **GPT partition table** for modern UEFI systems
+- **GPT/MBR partition schemes** for UEFI and BIOS systems
 - **Automatic file splitting** handles large install.wim files
 - **Boot sector configuration** for maximum compatibility
 - **Progress tracking** through each preparation stage
@@ -238,6 +238,9 @@ JustDD requires these command-line tools (usually pre-installed):
 | `mount`/`umount` | Filesystem mounting          | `util-linux`     |
 | `wipefs`         | Filesystem signature removal | `util-linux`     |
 | `pkexec`         | Privilege escalation         | `polkit`         |
+| `partprobe`      | Partition table reloading    | `parted`         |
+| `fuser`          | Process detection            | `psmisc`         |
+| `ms-sys`         | MBR bootloader               | `ms-sys`         |
 
 ### Python Dependencies
 

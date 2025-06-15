@@ -22,7 +22,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          dnf -y install git python3 python3-pip rpm-build rpmdevtools python3-devel ntfs-3g-devel dosfstools rsync polkit
+          dnf -y install git python3 python3-pip rpm-build rpmdevtools python3-devel ntfs-3g-devel dosfstools rsync polkit parted psmisc util-linux
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,8 +31,10 @@ jobs:
         id: get_version
         run: |
           VERSION=$(grep -Po "(?<=pkgver=)([0-9]+\.[0-9]+\.[0-9]+)" PKGBUILD)
-          echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Extracted version: ${VERSION}"
+          RELEASE=$(grep -Po "(?<=pkgrel=)([0-9]+)" PKGBUILD)
+          FULL_VERSION="${VERSION}-${RELEASE}"
+          echo "PACKAGE_VERSION=${FULL_VERSION}" >> $GITHUB_OUTPUT
+          echo "Extracted version: ${FULL_VERSION}"
 
       - name: Setup RPM build environment
         run: |
@@ -58,7 +60,7 @@ jobs:
           URL:            https://github.com/xxanqw/justdd
           BuildArch:      x86_64
 
-          Requires:       ntfs-3g, dosfstools, rsync, polkit
+          Requires:       ntfs-3g, dosfstools, rsync, polkit, parted, psmisc, util-linux
 
           %description
           JustDD is a simple, open-source graphical tool to write Linux and Windows ISO images to USB drives.

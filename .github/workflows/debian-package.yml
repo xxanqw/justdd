@@ -27,8 +27,10 @@ jobs:
         id: get_version
         run: |
           VERSION=$(grep -Po "(?<=pkgver=)([0-9]+\.[0-9]+\.[0-9]+)" PKGBUILD)
-          echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Extracted version: ${VERSION}"
+          RELEASE=$(grep -Po "(?<=pkgrel=)([0-9]+)" PKGBUILD)
+          FULL_VERSION="${VERSION}-${RELEASE}"
+          echo "PACKAGE_VERSION=${FULL_VERSION}" >> $GITHUB_OUTPUT
+          echo "Extracted version: ${FULL_VERSION}"
 
       - name: Install Python dependencies
         run: |
@@ -50,7 +52,7 @@ jobs:
           Section: utils
           Priority: optional
           Architecture: amd64
-          Depends: ntfs-3g, dosfstools, rsync, polkitd
+          Depends: ntfs-3g, dosfstools, rsync, polkit-1, parted, psmisc, util-linux
           Maintainer: Ivan Potiienko <contact@xxanqw.pp.ua>
           Description: JustDD - Simple graphical USB image writer for Linux and Windows ISOs
            JustDD is a simple, open-source graphical tool to write
