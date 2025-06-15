@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QSizePolicy,
     QListWidget,
-    QListWidgetItem
+    QListWidgetItem,
 )
 from PySide6.QtCore import Qt, QThread, Signal, QTimer
 from PySide6.QtGui import QPixmap, QPainter, QColor, QIcon
@@ -177,10 +177,11 @@ class ISODetector:
 
     @staticmethod
     def _examine_iso_contents(iso_path):
-        # Examine ISO contents using isoinfo if available
+        # Examine ISO contents using iso-info if available
         try:
+            # Try iso-info first (most common)
             result = subprocess.run(
-                ["isoinfo", "-d", "-i", iso_path],
+                ["iso-info", "-d", "-i", iso_path],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -189,16 +190,23 @@ class ISODetector:
             if result.returncode == 0:
                 output = result.stdout.lower()
 
-                if "microsoft" in output or "windows" in output:
+                # Check for Windows-specific indicators first
+                if any(
+                    term in output
+                    for term in ["microsoft", "windows", "win32", "winnt"]
+                ):
                     return ("windows", {"name": "Windows (ISO analysis)"})
 
+                # Then check for Linux indicators
                 if any(
-                    term in output for term in ["linux", "ubuntu", "debian", "fedora"]
+                    term in output
+                    for term in ["linux", "ubuntu", "debian", "fedora", "gnu"]
                 ):
                     return ("linux", {"name": "Linux (ISO analysis)"})
 
+            # Examine file list for more specific detection
             result = subprocess.run(
-                ["isoinfo", "-l", "-i", iso_path],
+                ["iso-info", "-l", "-i", iso_path],
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -207,20 +215,78 @@ class ISODetector:
             if result.returncode == 0:
                 file_list = result.stdout.lower()
 
+                # Windows-specific files (check these first)
                 windows_files = [
                     "setup.exe",
                     "autorun.inf",
                     "bootmgr",
                     "sources/install.wim",
+                    "sources/install.esd",
+                    "sources/boot.wim",
+                    "efi/microsoft",
+                    "support/tools",
+                    "sources/setuphost.exe",
                 ]
-                if any(wfile in file_list for wfile in windows_files):
+
+                windows_matches = sum(
+                    1 for wfile in windows_files if wfile in file_list
+                )
+
+                # If we find multiple Windows-specific files, it's definitely Windows
+                if windows_matches >= 2:
                     return ("windows", {"name": "Windows (file analysis)"})
 
-                linux_files = ["vmlinuz", "initrd", "casper/", "live/", "isolinux/"]
-                if any(lfile in file_list for lfile in linux_files):
-                    return ("linux", {"name": "Linux (file analysis)"})
+                # Linux-specific files
+                linux_files = [
+                    "vmlinuz",
+                    "initrd",
+                    "casper/",
+                    "live/",
+                    "isolinux/",
+                    "syslinux/",
+                    "boot/grub",
+                    "efi/boot/bootx64.efi",
+                ]
 
-        except:
+                linux_matches = sum(1 for lfile in linux_files if lfile in file_list)
+
+                # Only identify as Linux if we have Linux files and no strong Windows indicators
+                if linux_matches >= 2 and windows_matches == 0:
+                    return ("linux", {"name": "Linux (file analysis)"})
+                elif windows_matches > 0:
+                    return ("windows", {"name": "Windows (file analysis)"})
+
+        except FileNotFoundError:
+            # iso-info not found, try fallback with isoinfo (older systems)
+            try:
+                result = subprocess.run(
+                    ["isoinfo", "-d", "-i", iso_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+                if result.returncode == 0:
+                    output = result.stdout.lower()
+
+                    # Check for Windows-specific indicators first
+                    if any(
+                        term in output
+                        for term in ["microsoft", "windows", "win32", "winnt"]
+                    ):
+                        return ("windows", {"name": "Windows (ISO analysis)"})
+
+                    # Then check for Linux indicators
+                    if any(
+                        term in output
+                        for term in ["linux", "ubuntu", "debian", "fedora", "gnu"]
+                    ):
+                        return ("linux", {"name": "Linux (ISO analysis)"})
+
+            except FileNotFoundError:
+                # Neither iso-info nor isoinfo available
+                pass
+        except Exception:
             pass
 
         return ("unknown", {})
@@ -232,11 +298,12 @@ class FlashWorker(QThread):
     log_message = Signal(str)
     finished = Signal(bool, str)
 
-    def __init__(self, iso_path, target_drive, mode="linux"):
+    def __init__(self, iso_path, target_drive, mode="linux", partition_scheme="gpt"):
         super().__init__()
         self.iso_path = iso_path
         self.target_drive = target_drive
         self.mode = mode
+        self.partition_scheme = partition_scheme
         self._process = None
 
     def run(self):
@@ -400,6 +467,7 @@ class FlashWorker(QThread):
         self.log_message.emit(f"Starting Windows USB preparation")
         self.log_message.emit(f"ISO: {self.iso_path}")
         self.log_message.emit(f"Target: {self.target_drive}")
+        self.log_message.emit(f"Partition scheme: {self.partition_scheme.upper()}")
 
         self.status_update.emit("Checking device status...")
         self.progress.emit(5)
@@ -419,12 +487,17 @@ class FlashWorker(QThread):
             pass
 
         drive = self.target_drive
+        iso_mount = "/mnt/justdd_iso"
+
+        if self.partition_scheme == "mbr":
+            self._flash_windows_mbr(drive, iso_mount)
+        else:
+            self._flash_windows_gpt(drive, iso_mount)
+
+    def _flash_windows_gpt(self, drive, iso_mount):
+        """Flash Windows using GPT partition scheme (UEFI)"""
         p1, p2 = f"{drive}1", f"{drive}2"
-        iso_mount, vfat_mount, ntfs_mount = (
-            "/mnt/justdd_iso",
-            "/mnt/justdd_vfat",
-            "/mnt/justdd_ntfs",
-        )
+        vfat_mount, ntfs_mount = "/mnt/justdd_vfat", "/mnt/justdd_ntfs"
 
         steps = [
             ("Wiping filesystem signatures", 10, ["wipefs", "-a", drive]),
@@ -452,8 +525,9 @@ class FlashWorker(QThread):
                     "100%",
                 ],
             ),
-            ("Waiting for partition recognition", 28, ["partprobe", drive]),
-            ("Waiting for devices", 30, ["sleep", "2"]),
+            ("Setting boot flag", 28, ["parted", drive, "set", "1", "esp", "on"]),
+            ("Waiting for partition recognition", 30, ["partprobe", drive]),
+            ("Waiting for devices", 32, ["sleep", "2"]),
             ("Formatting BOOT partition", 35, ["mkfs.vfat", "-n", "BOOT", p1]),
             (
                 "Formatting INSTALL partition",
@@ -519,10 +593,84 @@ class FlashWorker(QThread):
             ),
         ]
 
+        self._execute_windows_script(steps, drive, "GPT (UEFI)")
+
+    def _flash_windows_mbr(self, drive, iso_mount):
+        """Flash Windows using MBR partition scheme (BIOS)"""
+        p1 = f"{drive}1"
+        ntfs_mount = "/mnt/justdd_ntfs"
+
+        steps = [
+            ("Wiping filesystem signatures", 10, ["wipefs", "-a", drive]),
+            (
+                "Creating MBR partition table",
+                15,
+                ["parted", "--script", drive, "mklabel", "msdos"],
+            ),
+            (
+                "Creating Windows partition",
+                20,
+                [
+                    "parted",
+                    "--script",
+                    drive,
+                    "mkpart",
+                    "primary",
+                    "ntfs",
+                    "0%",
+                    "100%",
+                ],
+            ),
+            ("Setting boot flag", 25, ["parted", drive, "set", "1", "boot", "on"]),
+            ("Waiting for partition recognition", 30, ["partprobe", drive]),
+            ("Waiting for devices", 35, ["sleep", "2"]),
+            (
+                "Formatting Windows partition",
+                40,
+                ["mkfs.ntfs", "--quick", "-L", "WINDOWS", p1],
+            ),
+            (
+                "Creating mount directories",
+                45,
+                ["mkdir", "-p", iso_mount, ntfs_mount],
+            ),
+            ("Mounting ISO", 50, ["mount", "-o", "loop", self.iso_path, iso_mount]),
+            ("Mounting Windows partition", 55, ["mount", p1, ntfs_mount]),
+            (
+                "Copying Windows files (this takes a long time)",
+                60,
+                [
+                    "rsync",
+                    "-r",
+                    "--info=progress2",
+                    "--no-perms",
+                    "--no-owner",
+                    "--no-group",
+                    f"{iso_mount}/",
+                    f"{ntfs_mount}/",
+                ],
+            ),
+            ("Installing bootloader", 85, ["ms-sys", "-7", drive]),
+            ("Unmounting Windows partition", 95, ["umount", ntfs_mount]),
+            ("Unmounting ISO", 97, ["umount", iso_mount]),
+            ("Syncing filesystem", 99, ["sync"]),
+            (
+                "Cleaning up mount directories",
+                100,
+                ["rmdir", iso_mount, ntfs_mount],
+            ),
+        ]
+
+        self._execute_windows_script(steps, drive, "MBR (BIOS)")
+
+    def _execute_windows_script(self, steps, drive, scheme_name):
+        """Execute the Windows USB creation script"""
         try:
             script_lines = [
                 "#!/bin/bash",
                 "set -e",
+                "",
+                f"# Windows USB creation script - {scheme_name}",
                 "",
                 "# Function to check for interruption",
                 "check_interruption() {",
@@ -545,14 +693,12 @@ class FlashWorker(QThread):
                 "unmount_device_partitions() {",
                 '    local device="$1"',
                 '    echo "Unmounting all partitions on $device"',
-                "    # Get all mounted partitions for this device",
                 "    mount | grep \"^$device\" | awk '{print $1}' | while read partition; do",
                 '        if [ -n "$partition" ]; then',
                 '            echo "Unmounting partition: $partition"',
                 '            umount "$partition" 2>/dev/null || umount -l "$partition" 2>/dev/null || true',
                 "        fi",
                 "    done",
-                "    # Also try to unmount by device pattern",
                 f"    for part in {drive}*; do",
                 f'        if [ "$part" != "{drive}" ] && mountpoint -q "$part" 2>/dev/null; then',
                 '            echo "Force unmounting: $part"',
@@ -567,12 +713,10 @@ class FlashWorker(QThread):
                 "kill_device_processes() {",
                 '    local device="$1"',
                 '    echo "Checking for processes using $device"',
-                "    # Try fuser first",
                 "    if command -v fuser >/dev/null 2>&1; then",
                 f'        fuser -km "{drive}" 2>/dev/null || true',
                 f'        fuser -km "{drive}"* 2>/dev/null || true',
                 "    fi",
-                "    # Try lsof as backup",
                 "    if command -v lsof >/dev/null 2>&1; then",
                 f'        lsof "{drive}"* 2>/dev/null | awk "NR>1 {{print \\$2}}" | xargs -r kill -9 2>/dev/null || true',
                 "    fi",
@@ -588,13 +732,9 @@ class FlashWorker(QThread):
                 "    while [ $attempt -le $max_attempts ]; do",
                 '        echo "Wipefs attempt $attempt/$max_attempts"',
                 "        ",
-                "        # First unmount all partitions",
                 '        unmount_device_partitions "$device"',
-                "        ",
-                "        # Kill processes using the device",
                 '        kill_device_processes "$device"',
                 "        ",
-                "        # Try wipefs",
                 '        if wipefs -a "$device" 2>/dev/null; then',
                 '            echo "Wipefs successful"',
                 "            return 0",
@@ -625,25 +765,13 @@ class FlashWorker(QThread):
                 "    done",
                 "}",
                 "",
-                "# Set trap for cleanup on exit",
                 "trap cleanup EXIT",
-                "",
-                "# Initial cleanup",
                 "cleanup",
                 "",
-                f"# Initial device preparation for {drive}",
-                f'echo "Preparing device {drive}"',
-                "",
-                "# Step 1: Unmount all partitions on the device",
+                f'echo "Preparing device {drive} with {scheme_name}"',
                 f'unmount_device_partitions "{drive}"',
-                "",
-                "# Step 2: Kill any remaining processes",
                 f'kill_device_processes "{drive}"',
-                "",
-                "# Step 3: Wait for everything to settle",
                 "sleep 3",
-                "",
-                "# Now execute the actual Windows USB creation steps",
                 "",
             ]
 
@@ -653,6 +781,44 @@ class FlashWorker(QThread):
 
                 if cmd[0] == "wipefs":
                     script_lines.append(f'retry_wipefs "{drive}"')
+                elif cmd[0] == "ms-sys":
+                    # Special handling for ms-sys (MBR bootloader)
+                    script_lines.append("# Installing MBR bootloader")
+                    script_lines.append("if command -v ms-sys >/dev/null 2>&1; then")
+                    script_lines.append(
+                        f'    echo "Installing Windows 7 MBR bootloader with ms-sys"'
+                    )
+                    script_lines.append(
+                        f'    ms-sys -7 "{drive}" && echo "MBR bootloader installed successfully" || echo "Warning: ms-sys failed, trying alternative method"'
+                    )
+                    script_lines.append("else")
+                    script_lines.append(
+                        '    echo "ms-sys not found, trying alternative bootloader installation..."'
+                    )
+                    script_lines.append(
+                        "    # Try to install bootloader using syslinux if available"
+                    )
+                    script_lines.append(
+                        "    if command -v syslinux >/dev/null 2>&1; then"
+                    )
+                    script_lines.append(
+                        f'        echo "Installing bootloader with syslinux"'
+                    )
+                    script_lines.append(
+                        f'        syslinux -i "{drive}1" && echo "Syslinux bootloader installed" || echo "Syslinux installation failed"'
+                    )
+                    script_lines.append("    else")
+                    script_lines.append(
+                        '        echo "Warning: No bootloader installation method available"'
+                    )
+                    script_lines.append(
+                        '        echo "The USB may not be bootable on BIOS systems"'
+                    )
+                    script_lines.append(
+                        '        echo "Consider installing ms-sys package: sudo pacman -S ms-sys"'
+                    )
+                    script_lines.append("    fi")
+                    script_lines.append("fi")
                 else:
                     script_lines.append(f'echo "Running: {" ".join(cmd)}"')
                     quoted_cmd = []
@@ -669,7 +835,7 @@ class FlashWorker(QThread):
 
             script_lines.extend(
                 [
-                    'echo "Windows USB creation completed successfully!"',
+                    f'echo "Windows USB creation completed successfully with {scheme_name}!"',
                     'echo "The USB drive is ready for use."',
                 ]
             )
@@ -743,8 +909,12 @@ class FlashWorker(QThread):
 
                 if return_code == 0:
                     self.progress.emit(100)
-                    self.status_update.emit("Windows USB preparation completed!")
-                    self.finished.emit(True, "Windows USB created successfully!")
+                    self.status_update.emit(
+                        f"Windows USB preparation completed ({scheme_name})!"
+                    )
+                    self.finished.emit(
+                        True, f"Windows USB created successfully with {scheme_name}!"
+                    )
                 elif return_code == 130:
                     self.log_message.emit("Operation cancelled by user")
                     return
@@ -775,13 +945,192 @@ class FlashWorker(QThread):
                 self.finished.emit(False, f"Windows USB preparation failed: {str(e)}")
 
 
+class PartitionSchemeSelectionPage(QWidget):
+    selection_changed = Signal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.selected_scheme = None
+        self.setup_ui()
+
+    def setup_ui(self):
+        container = QWidget()
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(60)
+
+        left_widget = QWidget()
+        left_widget.setFixedWidth(200)
+        left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(20)
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        left_layout.addStretch(1)
+
+        icon_label = QLabel("⚙️")
+        icon_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        icon_label.setStyleSheet(
+            "font-size: 48pt; border: none; background: transparent;"
+        )
+
+        title_label = QLabel("Partition Scheme")
+        title_label.setStyleSheet("font-size: 18pt; font-weight: bold; color: #f9e79f;")
+        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        left_layout.addWidget(icon_label)
+        left_layout.addWidget(title_label)
+        left_layout.addStretch(1)
+
+        right_widget = QWidget()
+        right_widget.setFixedWidth(450)
+        right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 40, 0, 40)
+        right_layout.setSpacing(25)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        scheme_frame = QFrame()
+        scheme_frame.setFixedSize(400, 280)
+        scheme_frame.setStyleSheet(
+            """
+            QFrame {
+                background-color: #2d2d2d;
+                border: 1px solid #404040;
+                border-radius: 8px;
+            }
+        """
+        )
+        scheme_layout = QVBoxLayout(scheme_frame)
+        scheme_layout.setContentsMargins(20, 15, 20, 15)
+        scheme_layout.setSpacing(15)
+
+        title = QLabel("Choose Partition Scheme")
+        title.setStyleSheet(
+            "font-size: 14pt; font-weight: bold; color: #ffffff; border: none; background: transparent;"
+        )
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Horizontal layout for buttons
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(15)
+
+        # GPT (UEFI) Option
+        self.gpt_button = QPushButton()
+        self.gpt_button.setFixedSize(170, 100)
+        self.gpt_button.setCheckable(True)
+        self.gpt_button.clicked.connect(lambda: self.select_scheme("gpt"))
+
+        gpt_layout = QVBoxLayout()
+        gpt_layout.setContentsMargins(10, 15, 10, 10)
+        gpt_layout.setSpacing(8)
+
+        gpt_title = QLabel("🔧 GPT (UEFI)")
+        gpt_title.setStyleSheet(
+            "font-size: 11pt; font-weight: bold; color: #f9e79f; border: none; background: transparent;"
+        )
+        gpt_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        gpt_desc = QLabel("For modern computers\n(2010+)\nSupports drives >2TB")
+        gpt_desc.setStyleSheet(
+            "font-size: 8pt; color: #cccccc; border: none; background: transparent; line-height: 1.2;"
+        )
+        gpt_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        gpt_layout.addWidget(gpt_title)
+        gpt_layout.addWidget(gpt_desc)
+        gpt_layout.addStretch()
+        self.gpt_button.setLayout(gpt_layout)
+
+        # MBR (BIOS) Option
+        self.mbr_button = QPushButton()
+        self.mbr_button.setFixedSize(170, 100)
+        self.mbr_button.setCheckable(True)
+        self.mbr_button.clicked.connect(lambda: self.select_scheme("mbr"))
+
+        mbr_layout = QVBoxLayout()
+        mbr_layout.setContentsMargins(10, 15, 10, 10)
+        mbr_layout.setSpacing(8)
+
+        mbr_title = QLabel("🔧 MBR (BIOS)")
+        mbr_title.setStyleSheet(
+            "font-size: 11pt; font-weight: bold; color: #3498db; border: none; background: transparent;"
+        )
+        mbr_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        mbr_desc = QLabel("For older computers\n(pre-2010)\nLimited to 2TB drives")
+        mbr_desc.setStyleSheet(
+            "font-size: 8pt; color: #cccccc; border: none; background: transparent; line-height: 1.2;"
+        )
+        mbr_desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        mbr_layout.addWidget(mbr_title)
+        mbr_layout.addWidget(mbr_desc)
+        mbr_layout.addStretch()
+        self.mbr_button.setLayout(mbr_layout)
+
+        buttons_layout.addWidget(self.gpt_button)
+        buttons_layout.addWidget(self.mbr_button)
+
+        info_label = QLabel(
+            "💡 Choose GPT for most modern computers, or MBR for older systems"
+        )
+        info_label.setStyleSheet(
+            "font-size: 9pt; color: #888888; font-style: italic; border: none; background: transparent;"
+        )
+        info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        info_label.setWordWrap(True)
+
+        scheme_layout.addWidget(title)
+        scheme_layout.addLayout(buttons_layout)
+        scheme_layout.addWidget(info_label)
+
+        right_layout.addWidget(scheme_frame)
+
+        container_layout.addWidget(left_widget)
+        container_layout.addWidget(right_widget)
+
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(50, 0, 50, 50)
+        main_layout.addStretch(1)
+        main_layout.addWidget(container, alignment=Qt.AlignmentFlag.AlignCenter)
+        main_layout.addStretch(1)
+
+    def select_scheme(self, scheme):
+        self.selected_scheme = scheme
+        if scheme == "gpt":
+            self.gpt_button.setChecked(True)
+            self.mbr_button.setChecked(False)
+        else:
+            self.mbr_button.setChecked(True)
+            self.gpt_button.setChecked(False)
+        self.selection_changed.emit()
+
+    def get_selected_scheme(self):
+        return self.selected_scheme
+
+    def has_valid_selection(self):
+        return self.selected_scheme is not None
+
+    def reset_selection(self):
+        self.selected_scheme = None
+        self.gpt_button.setChecked(False)
+        self.mbr_button.setChecked(False)
+
+
 class CompactStepIndicator(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.current_step = 1
         self.total_steps = 3
+        self.is_windows_mode = False
         self.setFixedHeight(25)
-        self.setFixedWidth(120)
+        self.setFixedWidth(160)  # Increased width for 4 steps
+
+    def set_windows_mode(self, enabled):
+        self.is_windows_mode = enabled
+        self.total_steps = 4 if enabled else 3
+        self.setFixedWidth(160 if enabled else 120)
+        self.update()
 
     def set_step(self, step):
         self.current_step = step
@@ -1263,12 +1612,14 @@ class FlashPage(QWidget):
             "font-size: 48pt; border: none; background: transparent;"
         )
 
-        title_label = QLabel("Ready to Flash")
-        title_label.setStyleSheet("font-size: 18pt; font-weight: bold; color: #f9e79f;")
-        title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label = QLabel("Ready to Flash")
+        self.title_label.setStyleSheet(
+            "font-size: 18pt; font-weight: bold; color: #f9e79f;"
+        )
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         left_layout.addWidget(icon_label)
-        left_layout.addWidget(title_label)
+        left_layout.addWidget(self.title_label)
         left_layout.addStretch(1)
 
         right_widget = QWidget()
@@ -1483,6 +1834,9 @@ class FlashPage(QWidget):
     def start_flash(self):
         self.flashing = True
 
+        # Change title to indicate flashing is in progress
+        self.title_label.setText("Flashing...")
+
         self.content_container.hide()
         self.progress_container.show()
 
@@ -1500,6 +1854,9 @@ class FlashPage(QWidget):
 
     def flash_completed(self, success, message):
         self.flashing = False
+
+        # Reset title back to "Ready to Flash"
+        self.title_label.setText("Ready to Flash")
 
         if success:
             self.status_label.setText("Flash completed successfully!")
@@ -1585,6 +1942,7 @@ class EtcherWizardApp(QMainWindow):
         self.iso_path = ""
         self.drive_path = ""
         self.drive_display = ""
+        self.partition_scheme = "gpt"
         self.flash_worker = None
         self.current_page = 0
         self._shutdown_in_progress = False
@@ -1604,7 +1962,7 @@ class EtcherWizardApp(QMainWindow):
 
         self.setup_ui()
         self.update_navigation_buttons()
-        
+
         # Check for updates on startup (after a short delay)
         QTimer.singleShot(2000, self._check_for_updates)
 
@@ -1750,15 +2108,20 @@ class EtcherWizardApp(QMainWindow):
 
         self.iso_page = ISOSelectionPage()
         self.drive_page = DriveSelectionPage()
+        self.partition_scheme_page = PartitionSchemeSelectionPage()
         self.flash_page = FlashPage()
         self.success_page = SuccessPage()
 
         self.iso_page.selection_changed.connect(self.update_navigation_buttons)
         self.drive_page.selection_changed.connect(self.update_navigation_buttons)
+        self.partition_scheme_page.selection_changed.connect(
+            self.update_navigation_buttons
+        )
         self.success_page.flash_another_requested.connect(self.reset_to_start)
 
         self.stacked_widget.addWidget(self.iso_page)
         self.stacked_widget.addWidget(self.drive_page)
+        self.stacked_widget.addWidget(self.partition_scheme_page)
         self.stacked_widget.addWidget(self.flash_page)
         self.stacked_widget.addWidget(self.success_page)
 
@@ -1835,7 +2198,7 @@ class EtcherWizardApp(QMainWindow):
             background-color: #f9e79f;
             color: #2c3e50;
             border: 1px solid #f9e79f;
-            border-radius: 8px;
+            border-radius:  8px;
             font-weight: bold;
             }
             QPushButton:hover {
@@ -1918,6 +2281,7 @@ class EtcherWizardApp(QMainWindow):
     def update_navigation_buttons(self):
         page = self.current_page
         is_flashing = self.flash_page.is_flashing()
+        is_windows = self.iso_page.get_iso_type() == "windows"
 
         self.back_button.hide()
         self.continue_button.hide()
@@ -1934,25 +2298,56 @@ class EtcherWizardApp(QMainWindow):
             self.continue_button.show()
             self.continue_button.setEnabled(self.drive_page.has_valid_selection())
         elif page == 2:
-            self.back_button.show()
-            self.flash_button.show()
+            if is_windows:
+                # Partition scheme selection page
+                self.back_button.show()
+                self.continue_button.show()
+                self.continue_button.setEnabled(
+                    self.partition_scheme_page.has_valid_selection()
+                )
+            else:
+                # Flash page for Linux
+                self.back_button.show()
+                self.flash_button.show()
         elif page == 3:
+            if is_windows:
+                # Flash page for Windows
+                self.back_button.show()
+                self.flash_button.show()
+            else:
+                # Success page
+                pass
+        elif page == 4:
+            # Success page for Windows
             pass
 
     def go_back(self):
-        if self.current_page > 0 and self.current_page <= 2:
-            self.current_page -= 1
+        is_windows = self.iso_page.get_iso_type() == "windows"
+
+        if self.current_page > 0:
+            if is_windows and self.current_page <= 3:
+                self.current_page -= 1
+            elif not is_windows and self.current_page <= 2:
+                self.current_page -= 1
+            else:
+                return
+
             self.step_indicator.set_step(self.current_page + 1)
             self.stacked_widget.setCurrentIndex(self.current_page)
             self.update_navigation_buttons()
 
     def go_forward(self):
+        is_windows = self.iso_page.get_iso_type() == "windows"
+
         if self.current_page == 0:
             iso_path = self.iso_page.get_selected_iso()
             if iso_path:
                 self.iso_path = iso_path
                 iso_type = self.iso_page.get_iso_type()
                 iso_details = self.iso_page.get_iso_details()
+
+                # Update step indicator for Windows mode
+                self.step_indicator.set_windows_mode(iso_type == "windows")
 
                 self.logs_window.append_log(f"Selected ISO: {iso_path}")
                 self.logs_window.append_log(f"Detected type: {iso_type}")
@@ -1969,21 +2364,45 @@ class EtcherWizardApp(QMainWindow):
                 self.drive_path = drive_path
                 self.drive_display = drive_display
                 self.logs_window.append_log(f"Selected drive: {drive_path}")
-                self.current_page = 2
-                self.step_indicator.set_step(3)
 
-                iso_type = self.iso_page.get_iso_type()
-                iso_details = self.iso_page.get_iso_details()
-                self.flash_page.set_flash_info(
-                    self.iso_path,
-                    self.drive_path,
-                    self.drive_display,
-                    iso_type,
-                    iso_details,
-                )
+                if is_windows:
+                    # Go to partition scheme selection for Windows
+                    self.current_page = 2
+                    self.step_indicator.set_step(3)
+                    self.stacked_widget.setCurrentIndex(2)
+                else:
+                    # Go directly to flash page for Linux
+                    self.current_page = 2
+                    self.step_indicator.set_step(3)
+                    self._prepare_flash_page()
+                    self.stacked_widget.setCurrentIndex(3)
 
-                self.stacked_widget.setCurrentIndex(2)
                 self.update_navigation_buttons()
+        elif self.current_page == 2 and is_windows:
+            # Partition scheme selection completed
+            scheme = self.partition_scheme_page.get_selected_scheme()
+            if scheme:
+                self.partition_scheme = scheme
+                self.logs_window.append_log(
+                    f"Selected partition scheme: {scheme.upper()}"
+                )
+                self.current_page = 3
+                self.step_indicator.set_step(4)
+                self._prepare_flash_page()
+                self.stacked_widget.setCurrentIndex(3)
+                self.update_navigation_buttons()
+
+    def _prepare_flash_page(self):
+        """Prepare the flash page with current selections"""
+        iso_type = self.iso_page.get_iso_type()
+        iso_details = self.iso_page.get_iso_details()
+        self.flash_page.set_flash_info(
+            self.iso_path,
+            self.drive_path,
+            self.drive_display,
+            iso_type,
+            iso_details,
+        )
 
     def start_flash(self):
         reply = CustomMessageBox.warning(
@@ -2001,7 +2420,9 @@ class EtcherWizardApp(QMainWindow):
             iso_type = self.iso_page.get_iso_type()
             mode = "windows" if iso_type == "windows" else "linux"
 
-            self.flash_worker = FlashWorker(self.iso_path, self.drive_path, mode)
+            self.flash_worker = FlashWorker(
+                self.iso_path, self.drive_path, mode, self.partition_scheme
+            )
             self.flash_worker.progress.connect(self.flash_page.update_progress)
             self.flash_worker.status_update.connect(self.flash_page.update_status)
             self.flash_worker.log_message.connect(self.logs_window.append_log)
@@ -2080,29 +2501,23 @@ class EtcherWizardApp(QMainWindow):
                 self.flash_worker.deleteLater()
                 self.flash_worker = None
 
-            # Send notifications based on flash result
             if success:
-                self.current_page = 3
+                is_windows = self.iso_page.get_iso_type() == "windows"
+                self.current_page = 4 if is_windows else 3
                 self.stacked_widget.setCurrentWidget(self.success_page)
                 self.step_indicator.set_step(self.step_indicator.total_steps + 1)
-                
-                # Send success notification
+
                 send_notification(
                     title="Flash Complete",
-                    message="USB drive has been successfully created!"
+                    message="USB drive has been successfully created!",
                 )
             else:
-                # Send failure notification
                 send_notification(
-                    title="Flash Failed",
-                    message=f"Flash operation failed: {message}"
+                    title="Flash Failed", message=f"Flash operation failed: {message}"
                 )
-                
-                # Show error dialog
+
                 CustomMessageBox.critical(
-                    self,
-                    "Flash Failed",
-                    f"Flash operation failed: {message}"
+                    self, "Flash Failed", f"Flash operation failed: {message}"
                 )
 
             self.update_navigation_buttons()
@@ -2116,6 +2531,7 @@ class EtcherWizardApp(QMainWindow):
         self.iso_path = ""
         self.drive_path = ""
         self.drive_display = ""
+        self.partition_scheme = "gpt"
 
         self.iso_page.iso_path = None
         self.iso_page.iso_type = "unknown"
@@ -2127,12 +2543,14 @@ class EtcherWizardApp(QMainWindow):
         self.iso_page.iso_type_label.hide()
 
         self.drive_page.drive_list.clearSelection()
+        self.partition_scheme_page.reset_selection()
 
         self.flash_page.set_flash_info("", "", "")
         self.flash_page.content_container.show()
         self.flash_page.progress_container.hide()
         self.flash_page.progress_bar.setValue(0)
 
+        self.step_indicator.set_windows_mode(False)
         self.step_indicator.set_step(1)
         self.stacked_widget.setCurrentWidget(self.iso_page)
         self.update_navigation_buttons()
@@ -2159,20 +2577,23 @@ class EtcherWizardApp(QMainWindow):
 
     def _on_update_available(self, new_version, download_url):
         self.logs_window.append_log(f"Update available: {new_version}")
-        
+
         reply = CustomMessageBox.question(
             self,
             "Update Available",
             f"A new version ({new_version}) is available! Would you like to download it now?",
-            CustomMessageBox.Yes | CustomMessageBox.No
+            CustomMessageBox.Yes | CustomMessageBox.No,
         )
-        
+
         if reply == CustomMessageBox.Yes:
             import webbrowser
+
             webbrowser.open(download_url)
 
     def _on_no_update(self):
-        self.logs_window.append_log("No updates available - you're running the latest version")
+        self.logs_window.append_log(
+            "No updates available - you're running the latest version"
+        )
 
     def _on_update_check_failed(self, error_message):
         self.logs_window.append_log(f"Update check failed: {error_message}")
