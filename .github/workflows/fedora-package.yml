@@ -32,9 +32,9 @@ jobs:
         run: |
           VERSION=$(grep -Po "(?<=pkgver=)([0-9]+\.[0-9]+\.[0-9]+)" PKGBUILD)
           RELEASE=$(grep -Po "(?<=pkgrel=)([0-9]+)" PKGBUILD)
-          FULL_VERSION="${VERSION}-${RELEASE}"
-          echo "PACKAGE_VERSION=${FULL_VERSION}" >> $GITHUB_OUTPUT
-          echo "Extracted version: ${FULL_VERSION}"
+          echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "PACKAGE_RELEASE=${RELEASE}" >> $GITHUB_OUTPUT
+          echo "Extracted version: ${VERSION}, release: ${RELEASE}"
 
       - name: Setup RPM build environment
         run: |
@@ -120,7 +120,7 @@ jobs:
       - name: Build RPM package
         run: |
           rpmbuild -ba ~/rpmbuild/SPECS/justdd.spec
-          cp ~/rpmbuild/RPMS/x86_64/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}*.rpm ./
+          cp ~/rpmbuild/RPMS/x86_64/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ steps.get_version.outputs.PACKAGE_RELEASE }}*.rpm ./
 
       - name: List built packages
         run: |
@@ -130,6 +130,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ./justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}*.rpm
+          files: ./justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ steps.get_version.outputs.PACKAGE_RELEASE }}*.rpm
           draft: false
           prerelease: false

@@ -54,7 +54,14 @@ jobs:
       - name: Build package
         run: |
           cd /home/builder/build
-          sudo -u builder bash -c "yay -S --noconfirm --needed --batchinstall $(makepkg --printsrcinfo | awk '/depends =/ {print $3}') && makepkg -s --noconfirm"
+          sudo -u builder bash -c "
+            # Install dependencies from official repos first
+            yay -S --noconfirm --needed ntfs-3g dosfstools rsync polkit libcdio
+            # Install AUR dependencies
+            yay -S --noconfirm --needed ms-sys
+            # Build the package
+            makepkg -s --noconfirm
+          "
 
       - name: List built packages
         run: |
