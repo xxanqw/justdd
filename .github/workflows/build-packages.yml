@@ -174,3 +174,127 @@ jobs:
       with:
         name: build-artifacts-${{ inputs.target_branch }}
         path: packaging/artifacts/
+
+  build-executable:
+    needs: validate-and-generate-artifacts
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          # patchelf is often required by PyInstaller on Linux
+          apt-get install -y python3 curl build-essential patchelf
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install PyInstaller
+        run: uv tool install pyinstaller
+
+      - name: Build standalone executable with PyInstaller (onefile)
+        run: |
+          # Create virtual env and install project deps
+          uv venv
+          uv sync
+          # Build single-file executable via uv to ensure deps are in env
+          uv run pyinstaller --onefile \
+            --add-data "images/icon.png:images" \
+            --name justdd \
+            app.py
+
+      - name: Upload standalone executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: exe-${{ inputs.target_branch }}
+          path: |
+            dist/justdd
+            dist/justdd.*
+
+  build-deb:
+    needs: validate-and-generate-artifacts
+    runs-on: ubuntu-latest
+    container: debian:bookworm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y build-essential debhelper devscripts python3 curl
+
+      - name: Install uv and PyInstaller
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          uv tool install pyinstaller
+
+      - name: Build Debian package (using packaging scripts)
+        run: |
+          cd packaging/build-scripts
+          ./build-deb.sh
+
+      - name: Upload Debian package
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ inputs.target_branch }}
+          path: |
+            dist/*.deb
+
+  build-rpm:
+    needs: validate-and-generate-artifacts
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Update system
+        run: dnf -y update
+
+      - name: Install system dependencies
+        run: |
+          dnf -y install git python3 rpm-build rpmdevtools curl
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.target_branch }}
+
+      - name: Install uv and PyInstaller
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          uv tool install pyinstaller
+
+      - name: Build RPM package (using packaging scripts)
+        run: |
+          cd packaging/build-scripts
+          ./build-rpm.sh
+
+      - name: Upload RPM package
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ inputs.target_branch }}
+          path: |
+            dist/*.rpm
