@@ -1,0 +1,44 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME=justdd
+export PYBUILD_DISABLE=test
+
+%:
+	dh $@ --with python3 --buildsystem=pybuild
+
+override_dh_auto_build:
+	# Create virtual environment and install dependencies
+	python3 -m venv debian/justdd/usr/lib/justdd/venv
+	debian/justdd/usr/lib/justdd/venv/bin/pip install --upgrade pip
+	debian/justdd/usr/lib/justdd/venv/bin/pip install -r requirements.txt
+
+	# Build the application with PyInstaller
+	debian/justdd/usr/lib/justdd/venv/bin/pyinstaller \
+		--onefile \
+		--add-data "images/icon.png:images" \
+		--name justdd \
+		--distpath debian/justdd/usr/bin \
+		app.py
+
+	# Clean up build artifacts
+	rm -rf build dist *.spec
+
+override_dh_auto_install:
+	dh_auto_install
+
+	# Install binary
+	install -Dm755 debian/justdd/usr/bin/justdd debian/justdd/usr/bin/justdd
+
+	# Install desktop file
+	install -Dm644 debian/justdd.desktop debian/justdd/usr/share/applications/justdd.desktop
+
+	# Install icon
+	install -Dm644 images/icon.png debian/justdd/usr/share/pixmaps/justdd.png
+
+	# Install polkit policy
+	install -Dm644 debian/com.github.xxanqw.justdd.policy debian/justdd/usr/share/polkit-1/actions/com.github.xxanqw.justdd.policy
+
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -rf debian/justdd/usr/lib/justdd/venv
+	rm -rf build dist *.spec

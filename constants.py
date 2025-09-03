@@ -1,4 +1,4 @@
-__VERSION__ = "0.1.4-1"
+__VERSION__ = "0.1.4-2"
 
 __AUTHOR__ = "xxanqw"
 __APP_NAME__ = "JustDD"
