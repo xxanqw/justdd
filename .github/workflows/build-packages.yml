@@ -23,6 +23,9 @@ jobs:
   validate-and-generate-artifacts:
     runs-on: ubuntu-latest
     container: debian:bookworm
+    defaults:
+      run:
+        shell: bash
 
     steps:
     - name: Checkout code
@@ -34,8 +37,8 @@ jobs:
       run: |
         echo "Validating branch: ${{ inputs.target_branch }}"
         echo "Include build artifacts: ${{ inputs.include_build_artifacts }}"
-        echo "Current commit: $(git rev-parse HEAD)"
-        echo "Branch info: $(git branch -v)"
+        echo "Current commit: ${{ github.sha }}"
+        echo "Ref: ${{ github.ref }}"
 
     - name: Install system dependencies
       run: |
@@ -45,6 +48,9 @@ jobs:
     - name: Install uv
       run: |
         curl -LsSf https://astral.sh/uv/install.sh | sh
+        # Ensure uv is on PATH (installer places binaries in ~/.local/bin)
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+        # Some environments may place shims in ~/.cargo/bin; add as fallback
         echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
     - name: Install PyInstaller
@@ -83,7 +89,7 @@ jobs:
         import sys
 
         try:
-            with open('../pyproject.toml', 'rb') as f:
+            with open('../../pyproject.toml', 'rb') as f:
                 data = tomllib.load(f)
 
             deps = data.get('project', {}).get('dependencies', [])
@@ -100,7 +106,7 @@ jobs:
         JustDD Build Information
         ========================
         Branch: ${{ inputs.target_branch }}
-        Commit: $(git rev-parse HEAD)
+        Commit: ${{ github.sha }}
         Date: $(date)
         uv Version: $(uv --version)
         Python Version: $(python3 --version)
@@ -139,7 +145,7 @@ jobs:
         echo "# JustDD Manual Validation Report" > validation-report.md
         echo "Generated: $(date)" >> validation-report.md
         echo "Branch: ${{ inputs.target_branch }}" >> validation-report.md
-        echo "Commit: $(git rev-parse HEAD)" >> validation-report.md
+        echo "Commit: ${{ github.sha }}" >> validation-report.md
         echo "" >> validation-report.md
         echo "## Validation Results" >> validation-report.md
         echo "- ✅ Build scripts validation" >> validation-report.md

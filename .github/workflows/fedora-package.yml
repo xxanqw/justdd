@@ -14,6 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: fedora:latest
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Update system
