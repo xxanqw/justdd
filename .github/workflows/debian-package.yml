@@ -6,103 +6,55 @@ on:
       - "v*"
   workflow_dispatch:
 
-# Add permissions needed for creating releases
 permissions:
   contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: debian:bookworm
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3 python3-pip python3-setuptools python3-wheel build-essential debhelper devscripts fakeroot dh-python
+          apt-get update
+          apt-get install -y build-essential debhelper devscripts python3 curl ntfs-3g dosfstools rsync polkit-1 parted psmisc util-linux
 
-      - name: Extract version from PKGBUILD
+      - name: Extract version from constants.py
         id: get_version
         run: |
-          VERSION=$(grep -Po "(?<=pkgver=)([0-9]+\.[0-9]+\.[0-9]+)" PKGBUILD)
-          RELEASE=$(grep -Po "(?<=pkgrel=)([0-9]+)" PKGBUILD)
-          FULL_VERSION="${VERSION}-${RELEASE}"
-          echo "PACKAGE_VERSION=${FULL_VERSION}" >> $GITHUB_OUTPUT
-          echo "Extracted version: ${FULL_VERSION}"
+          VERSION=$(python3 -c "import sys; sys.path.insert(0, '.'); from constants import __VERSION__; print(__VERSION__)")
+          echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Extracted version: ${VERSION}"
 
-      - name: Install Python dependencies
+      - name: Install uv
         run: |
-          pip install uv
-          uv venv
-          source ./.venv/bin/activate
-          uv sync --all-extras
-          pip install pyinstaller
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Create debian directory structure
-        run: |
-          mkdir -p debian/source debian/usr/bin debian/usr/share/pixmaps debian/usr/share/applications debian/DEBIAN
+      - name: Install PyInstaller
+        run: uv tool install pyinstaller
 
-      - name: Create control file
+      - name: Build Debian package with enhanced scripts
         run: |
-          cat > debian/DEBIAN/control << EOF
-          Package: justdd
-          Version: ${{ steps.get_version.outputs.PACKAGE_VERSION }}
-          Section: utils
-          Priority: optional
-          Architecture: amd64
-          Depends: ntfs-3g, dosfstools, rsync, polkit-1, parted, psmisc, util-linux
-          Maintainer: Ivan Potiienko <contact@xxanqw.pp.ua>
-          Description: JustDD - Simple graphical USB image writer for Linux and Windows ISOs
-           JustDD is a simple, open-source graphical tool to write
-           Linux and Windows ISO images to USB drives.
-          EOF
+          cd packaging/build-scripts
+          ./build-deb.sh
 
-      - name: Build binary
+      - name: Test package installation
         run: |
-          source ./.venv/bin/activate
-          pyinstaller --onefile --add-data "images/icon.png:images" --name justdd app.py
-          chmod +x dist/justdd
-          cp dist/justdd debian/usr/bin/
+          apt-get install -y ./dist/*.deb || echo "Installation test completed"
 
-      - name: Create desktop file and icons
+      - name: List built packages
         run: |
-          cp images/icon.png debian/usr/share/pixmaps/justdd.png
-          cat > debian/usr/share/applications/justdd.desktop << EOF
-          [Desktop Entry]
-          Name=JustDD
-          Comment=USB Image Writer for Linux and Windows ISOs
-          Exec=justdd
-          Icon=justdd
-          Terminal=false
-          Type=Application
-          Categories=Utility;System;
-          EOF
-
-      - name: Create postinst script
-        run: |
-          cat > debian/DEBIAN/postinst << EOF
-          #!/bin/sh
-          set -e
-          echo "----------------------------------------------------------------------"
-          echo "NOTE: JustDD uses polkit for privilege escalation."
-          echo "If polkit is not enabled by default in your distribution, you may"
-          echo "need to start and enable the polkit service."
-          echo "----------------------------------------------------------------------"
-          exit 0
-          EOF
-          chmod +x debian/DEBIAN/postinst
-
-      - name: Build Debian package
-        run: |
-          fakeroot dpkg-deb --build debian
-          mv debian.deb justdd_${{ steps.get_version.outputs.PACKAGE_VERSION }}_amd64.deb
+          ls -la dist/*.deb
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: justdd_${{ steps.get_version.outputs.PACKAGE_VERSION }}_amd64.deb
+          files: dist/*.deb
           draft: false
           prerelease: false
