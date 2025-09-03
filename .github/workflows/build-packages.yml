@@ -1,4 +1,6 @@
 name: Manual Validation and Artifact Generation
+permissions:
+  contents: read
 
 on:
   workflow_dispatch:
