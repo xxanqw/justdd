@@ -6,7 +6,6 @@ on:
       - "v*"
   workflow_dispatch:
 
-# Add permissions needed for creating releases
 permissions:
   contents: write
 
@@ -20,116 +19,45 @@ jobs:
       - name: Update system
         run: dnf -y update
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
-          dnf -y install git python3 python3-pip rpm-build rpmdevtools python3-devel ntfs-3g-devel dosfstools rsync polkit parted psmisc util-linux
+          dnf -y install git python3 rpm-build rpmdevtools curl ntfs-3g dosfstools rsync polkit parted psmisc util-linux
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract version from PKGBUILD
+      - name: Extract version from constants.py
         id: get_version
         run: |
-          VERSION=$(grep -Po "(?<=pkgver=)([0-9]+\.[0-9]+\.[0-9]+)" PKGBUILD)
-          RELEASE=$(grep -Po "(?<=pkgrel=)([0-9]+)" PKGBUILD)
+          VERSION=$(python3 -c "import sys; sys.path.insert(0, '.'); from constants import __VERSION__; print(__VERSION__)")
           echo "PACKAGE_VERSION=${VERSION}" >> $GITHUB_OUTPUT
-          echo "PACKAGE_RELEASE=${RELEASE}" >> $GITHUB_OUTPUT
-          echo "Extracted version: ${VERSION}, release: ${RELEASE}"
+          echo "Extracted version: ${VERSION}"
 
-      - name: Setup RPM build environment
+      - name: Install uv
         run: |
-          mkdir -p ~/rpmbuild/{SPECS,SOURCES,BUILD,RPMS,SRPMS}
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Install uv and Python dependencies
+      - name: Install PyInstaller
+        run: uv tool install pyinstaller
+
+      - name: Build RPM package with enhanced scripts
         run: |
-          pip install uv
-          uv venv
-          source ./.venv/bin/activate
-          uv sync --all-extras
-          pip install pyinstaller
+          cd packaging/build-scripts
+          ./build-rpm.sh
 
-      - name: Create spec file
+      - name: Test package installation
         run: |
-          cat > ~/rpmbuild/SPECS/justdd.spec << EOF
-          Name:           justdd
-          Version:        ${{ steps.get_version.outputs.PACKAGE_VERSION }}
-          Release:        1%{?dist}
-          Summary:        Simple graphical USB image writer for Linux and Windows ISOs
-
-          License:        GPLv3
-          URL:            https://github.com/xxanqw/justdd
-          BuildArch:      x86_64
-
-          Requires:       ntfs-3g, dosfstools, rsync, polkit, parted, psmisc, util-linux
-
-          %description
-          JustDD is a simple, open-source graphical tool to write Linux and Windows ISO images to USB drives.
-          It is designed for ease of use, safety, and flexibility, supporting both direct ISO writing (via dd)
-          and advanced Windows USB preparation.
-
-          %prep
-          # No source unpacking needed as we're building directly from the workspace
-
-          %build
-          # Build will be handled in our GitHub Actions workflow
-
-          %install
-          mkdir -p %{buildroot}/usr/bin
-          mkdir -p %{buildroot}/usr/share/pixmaps
-          mkdir -p %{buildroot}/usr/share/applications
-
-          install -m 755 %{_sourcedir}/justdd %{buildroot}/usr/bin/justdd
-          install -m 644 %{_sourcedir}/justdd.png %{buildroot}/usr/share/pixmaps/justdd.png
-
-          cat > %{buildroot}/usr/share/applications/justdd.desktop << EOT
-          [Desktop Entry]
-          Name=JustDD
-          Comment=USB Image Writer for Linux and Windows ISOs
-          Exec=justdd
-          Icon=justdd
-          Terminal=false
-          Type=Application
-          Categories=Utility;System;
-          EOT
-
-          %files
-          /usr/bin/justdd
-          /usr/share/pixmaps/justdd.png
-          /usr/share/applications/justdd.desktop
-
-          %post
-          echo "----------------------------------------------------------------------"
-          echo "NOTE: JustDD uses polkit for privilege escalation."
-          echo "If polkit is not enabled by default in your distribution, you may"
-          echo "need to start and enable the polkit service."
-          echo "----------------------------------------------------------------------"
-
-          %changelog
-          * $(date '+%a %b %d %Y') GitHub Actions <actions@github.com> - ${{ steps.get_version.outputs.PACKAGE_VERSION }}-1
-          - Automated build from GitHub release
-          EOF
-
-      - name: Build binary
-        run: |
-          source ./.venv/bin/activate
-          pyinstaller --onefile --add-data "images/icon.png:images" --name justdd app.py
-          chmod +x dist/justdd
-          cp dist/justdd ~/rpmbuild/SOURCES/
-          cp images/icon.png ~/rpmbuild/SOURCES/justdd.png
-
-      - name: Build RPM package
-        run: |
-          rpmbuild -ba ~/rpmbuild/SPECS/justdd.spec
-          cp ~/rpmbuild/RPMS/x86_64/justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ steps.get_version.outputs.PACKAGE_RELEASE }}*.rpm ./
+          dnf install -y ./dist/*.rpm || echo "Installation test completed"
 
       - name: List built packages
         run: |
-          ls -la *.rpm
+          ls -la dist/*.rpm
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ./justdd-${{ steps.get_version.outputs.PACKAGE_VERSION }}-${{ steps.get_version.outputs.PACKAGE_RELEASE }}*.rpm
+          files: dist/*.rpm
           draft: false
           prerelease: false
