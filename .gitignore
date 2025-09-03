@@ -6,7 +6,7 @@ __pycache__/
 app.build/
 app.dist/
 app.onefile-build/
-justdd.spec
+./justdd.spec
 build/
 dist/
 pkg/
