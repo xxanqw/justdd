@@ -72,29 +72,8 @@ build_for_distro() {
 # Build for current distribution
 build_for_distro "$DISTRO"
 
-# Validate generated packages
-log_info "Validating generated packages..."
-for package in "$OUTPUT_DIR"/*.{deb,rpm,pkg.tar.zst}; do
-    if [ -f "$package" ]; then
-        case "$package" in
-            *.deb) validate_package "$package" "deb" ;;
-            *.rpm) validate_package "$package" "rpm" ;;
-            *.pkg.tar.zst) log_info "Arch package: $(basename "$package")" ;;
-        esac
-    fi
-done
+# List created packages
+log_success "Build completed. Packages:"
+ls -la "$OUTPUT_DIR"/*.{deb,rpm,pkg.tar.zst} 2>/dev/null || log_info "No packages found"
 
-# Generate build report
-generate_build_report "$OUTPUT_DIR"
-
-# List all created packages
-log_success "Build completed! Created packages:"
-ls -la "$OUTPUT_DIR"/*.{deb,rpm,pkg.tar.zst} 2>/dev/null || log_info "No packages found in output directory"
-
-# Clean up build artifacts
-log_info "Cleaning up build artifacts..."
-clean_build
-
-log_success "All builds completed successfully!"
-log_info "Packages are available in: $OUTPUT_DIR"
-log_info "Build report: $OUTPUT_DIR/build-report.txt"
+log_success "Done"

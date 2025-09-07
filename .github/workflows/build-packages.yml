@@ -1,199 +1,33 @@
-name: Manual Validation and Artifact Generation
-permissions:
-  contents: read
+name: Build Packages
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
-    inputs:
-      target_branch:
-        description: 'Branch to validate'
-        required: true
-        default: 'main'
-        type: choice
-        options:
-          - main
-          - develop
-      include_build_artifacts:
-        description: 'Generate build artifacts'
-        required: false
-        default: false
-        type: boolean
+
+permissions:
+  contents: write
 
 jobs:
-  validate-and-generate-artifacts:
+  build:
     runs-on: ubuntu-latest
-    container: debian:bookworm
-    defaults:
-      run:
-        shell: bash
-
+    strategy:
+      matrix:
+        container: [debian:bookworm, fedora:latest]
+    container: ${{ matrix.container }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        ref: ${{ inputs.target_branch }}
-
-    - name: Display selected branch
-      run: |
-        echo "Validating branch: ${{ inputs.target_branch }}"
-        echo "Include build artifacts: ${{ inputs.include_build_artifacts }}"
-        echo "Current commit: ${{ github.sha }}"
-        echo "Ref: ${{ github.ref }}"
-
-    - name: Install system dependencies
-      run: |
-        apt-get update
-        apt-get install -y build-essential debhelper devscripts python3 curl
-
-    - name: Install uv
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        # Ensure uv is on PATH (installer places binaries in ~/.local/bin)
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-        # Some environments may place shims in ~/.cargo/bin; add as fallback
-        echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-
-    - name: Install PyInstaller
-      run: uv tool install pyinstaller
-
-    - name: Validate build scripts
-      run: |
-        cd packaging/build-scripts
-
-        # Test build script functionality
-        echo "Testing build script validation..."
-        ./common.sh 2>&1 | head -20
-
-        # Test uv integration
-        echo "Testing uv integration..."
-        uv --version
-
-        # Test PyInstaller integration
-        echo "Testing PyInstaller integration..."
-        pyinstaller --version
-
-    - name: Generate build artifacts (if requested)
-      if: ${{ inputs.include_build_artifacts == true }}
-      run: |
-        echo "Generating build artifacts..."
-
-        cd packaging/build-scripts
-
-        # Create sample build artifacts
-        mkdir -p ../artifacts
-
-        # Generate requirements.txt
-        echo "Creating requirements.txt..."
-        python3 -c "
-        import tomllib
-        import sys
-
-        try:
-            with open('../../pyproject.toml', 'rb') as f:
-                data = tomllib.load(f)
-
-            deps = data.get('project', {}).get('dependencies', [])
-            with open('../artifacts/requirements.txt', 'w') as f:
-                for dep in deps:
-                    f.write(dep + '\n')
-        except Exception as e:
-            print(f'Error: {e}', file=sys.stderr)
-        "
-
-        # Create build info
-        echo "Creating build info..."
-        cat > ../artifacts/build-info.txt << EOF
-        JustDD Build Information
-        ========================
-        Branch: ${{ inputs.target_branch }}
-        Commit: ${{ github.sha }}
-        Date: $(date)
-        uv Version: $(uv --version)
-        Python Version: $(python3 --version)
-        PyInstaller Version: $(pyinstaller --version)
-        EOF
-
-        # List generated artifacts
-        echo "Generated artifacts:"
-        ls -la ../artifacts/
-
-    - name: Run example workflow validation
-      run: |
-        cd packaging/build-scripts
-        echo "Testing example workflow (dry run)..."
-        head -30 example-workflow.sh
-
-    - name: Test packaging infrastructure
-      run: |
-        echo "Testing packaging infrastructure..."
-
-        # Test common functions
-        cd packaging/build-scripts
-        source common.sh
-
-        # Test version detection
-        echo "Version: $(get_version)"
-
-        # Test distribution detection
-        echo "Distribution: $(detect_distro)"
-
-        # Test dependency checking
-        echo "Dependencies check completed"
-
-    - name: Generate comprehensive validation report
-      run: |
-        echo "# JustDD Manual Validation Report" > validation-report.md
-        echo "Generated: $(date)" >> validation-report.md
-        echo "Branch: ${{ inputs.target_branch }}" >> validation-report.md
-        echo "Commit: ${{ github.sha }}" >> validation-report.md
-        echo "" >> validation-report.md
-        echo "## Validation Results" >> validation-report.md
-        echo "- ✅ Build scripts validation" >> validation-report.md
-        echo "- ✅ uv integration test" >> validation-report.md
-        echo "- ✅ PyInstaller integration test" >> validation-report.md
-        echo "- ✅ Cross-platform compatibility test" >> validation-report.md
-        if [ "${{ inputs.include_build_artifacts }}" = "true" ]; then
-          echo "- ✅ Build artifacts generated" >> validation-report.md
-        fi
-        echo "" >> validation-report.md
-        echo "## Infrastructure Status" >> validation-report.md
-        echo "- uv version: $(uv --version)" >> validation-report.md
-        echo "- Python version: $(python3 --version)" >> validation-report.md
-        echo "- Distribution: $(lsb_release -d 2>/dev/null || echo 'Debian Bookworm')" >> validation-report.md
-        echo "- Build artifacts: ${{ inputs.include_build_artifacts }}" >> validation-report.md
-
-    - name: Upload validation report
-      uses: actions/upload-artifact@v4
-      with:
-        name: validation-report-${{ inputs.target_branch }}
-        path: validation-report.md
-
-    - name: Upload build artifacts (if generated)
-      if: ${{ inputs.include_build_artifacts == true }}
-      uses: actions/upload-artifact@v4
-      with:
-        name: build-artifacts-${{ inputs.target_branch }}
-        path: packaging/artifacts/
-
-  build-executable:
-    needs: validate-and-generate-artifacts
-    runs-on: ubuntu-latest
-    container: debian:bookworm
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.target_branch }}
 
-      - name: Install system dependencies
+      - name: Install base system deps
         run: |
-          apt-get update
-          # patchelf is often required by PyInstaller on Linux
-          # python3-dev provides libpython3.x.so needed by PyInstaller
-          apt-get install -y python3 python3-dev curl build-essential patchelf
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            apt-get install -y build-essential debhelper devscripts python3 curl rpm git make wget file patchelf rpmdevtools
+          elif command -v dnf >/dev/null; then
+            dnf -y install git python3 python3-devel rpm-build rpmdevtools curl make wget file patchelf
+          fi
 
       - name: Install uv
         run: |
@@ -201,107 +35,20 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Install PyInstaller (into project venv)
-        run: |
-          # Create virtual env and install project deps
-          uv venv
-          uv sync
-          # Ensure PyInstaller is available inside the project venv (not the tool shim)
-          .venv/bin/python -m pip install --upgrade pip
-          .venv/bin/python -m pip install pyinstaller
+      - name: Sync deps (all extras)
+        run: uv sync --all-extras
 
-      - name: Build standalone executable with PyInstaller (onefile)
-        run: |
-          # Use venv-local PyInstaller so it binds against system python (with python3-dev)
-          .venv/bin/pyinstaller --onefile \
-            --add-data "images/icon.png:images" \
-            --name justdd \
-            app.py
+      - name: Build all packages
+        run: bash packaging/build-scripts/build-all.sh
 
-      - name: Upload standalone executable
-        uses: actions/upload-artifact@v4
+      - name: List artifacts
+        run: ls -la dist || true
+
+      - name: Release (tag only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
         with:
-          name: exe-${{ inputs.target_branch }}
-          path: |
-            dist/justdd
-            dist/justdd.*
-
-  build-deb:
-    needs: validate-and-generate-artifacts
-    runs-on: ubuntu-latest
-    container: debian:bookworm
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.target_branch }}
-
-      - name: Install system dependencies
-        run: |
-          apt-get update
-          # Include python3-dev to provide libpython for PyInstaller build
-          # patchelf is helpful for adjusting ELF binaries if needed
-          apt-get install -y build-essential debhelper devscripts python3 python3-dev curl patchelf
-
-      - name: Install uv and PyInstaller
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          uv tool install pyinstaller
-
-      - name: Build Debian package (using packaging scripts)
-        run: |
-          cd packaging/build-scripts
-          ./build-deb.sh
-
-      - name: Upload Debian package
-        uses: actions/upload-artifact@v4
-        with:
-          name: deb-${{ inputs.target_branch }}
-          path: |
+          files: |
             dist/*.deb
-
-  build-rpm:
-    needs: validate-and-generate-artifacts
-    runs-on: ubuntu-latest
-    container:
-      image: fedora:latest
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Update system
-        run: dnf -y update
-
-      - name: Install system dependencies
-        run: |
-          # python3-devel provides libpython3.x.so required by PyInstaller on Fedora/RHEL
-          dnf -y install git python3 python3-devel rpm-build rpmdevtools curl patchelf
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.target_branch }}
-
-      - name: Install uv and PyInstaller
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
-          uv tool install pyinstaller
-
-      - name: Build RPM package (using packaging scripts)
-        run: |
-          cd packaging/build-scripts
-          ./build-rpm.sh
-
-      - name: Upload RPM package
-        uses: actions/upload-artifact@v4
-        with:
-          name: rpm-${{ inputs.target_branch }}
-          path: |
             dist/*.rpm
+            dist/*.pkg.tar.zst

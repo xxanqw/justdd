@@ -35,32 +35,14 @@ log_info "Setting up source directory..."
 # Copy source files
 cp -r "$PROJECT_ROOT"/* .
 
-# Set up uv virtual environment
-if ! setup_uv_venv; then
-    log_error "Failed to set up uv virtual environment"
-    exit 1
-fi
+sync_deps
 
-# Install dependencies with uv
-if ! install_uv_dependencies; then
-    log_error "Failed to install dependencies with uv"
-    exit 1
-fi
+# (Optional) export requirements
+create_requirements || true
 
-# Ensure PyInstaller is available inside the uv-managed venv
-log_info "Installing PyInstaller into the uv virtual environment..."
-"$WORK_DIR/.venv/bin/python" -m pip install --upgrade pip
-"$WORK_DIR/.venv/bin/python" -m pip install pyinstaller
-
-# Create requirements.txt for reference
-create_requirements
-
-# Build application with PyInstaller using uv environment
+# Build application (uv run pyinstaller)
 BUILD_DIR="debian/justdd/usr/bin"
-if ! build_app "$BUILD_DIR" "$PACKAGE_NAME" ".venv"; then
-    log_error "Failed to build application with PyInstaller"
-    exit 1
-fi
+build_app "$BUILD_DIR" "$PACKAGE_NAME"
 
 # Create Debian packaging structure
 mkdir -p debian/source
@@ -80,8 +62,7 @@ export PYBUILD_DISABLE=test
 	dh $@
 
 override_dh_auto_build:
-	# Application already built with PyInstaller, just ensure it's in place
-	@echo "Application pre-built with PyInstaller using uv"
+	@echo "Binary already built via uv/pyinstaller"
 
 override_dh_auto_install:
 	dh_auto_install
