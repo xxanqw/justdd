@@ -47,6 +47,11 @@ if ! install_uv_dependencies; then
     exit 1
 fi
 
+# Ensure PyInstaller is available inside the uv-managed venv
+log_info "Installing PyInstaller into the uv virtual environment..."
+"$WORK_DIR/.venv/bin/python" -m pip install --upgrade pip
+"$WORK_DIR/.venv/bin/python" -m pip install pyinstaller
+
 # Create requirements.txt for reference
 create_requirements
 

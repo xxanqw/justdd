@@ -192,7 +192,8 @@ jobs:
         run: |
           apt-get update
           # patchelf is often required by PyInstaller on Linux
-          apt-get install -y python3 curl build-essential patchelf
+          # python3-dev provides libpython3.x.so needed by PyInstaller
+          apt-get install -y python3 python3-dev curl build-essential patchelf
 
       - name: Install uv
         run: |
@@ -200,16 +201,19 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
-      - name: Install PyInstaller
-        run: uv tool install pyinstaller
-
-      - name: Build standalone executable with PyInstaller (onefile)
+      - name: Install PyInstaller (into project venv)
         run: |
           # Create virtual env and install project deps
           uv venv
           uv sync
-          # Build single-file executable via uv to ensure deps are in env
-          uv run pyinstaller --onefile \
+          # Ensure PyInstaller is available inside the project venv (not the tool shim)
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/python -m pip install pyinstaller
+
+      - name: Build standalone executable with PyInstaller (onefile)
+        run: |
+          # Use venv-local PyInstaller so it binds against system python (with python3-dev)
+          .venv/bin/pyinstaller --onefile \
             --add-data "images/icon.png:images" \
             --name justdd \
             app.py
@@ -238,7 +242,9 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y build-essential debhelper devscripts python3 curl
+          # Include python3-dev to provide libpython for PyInstaller build
+          # patchelf is helpful for adjusting ELF binaries if needed
+          apt-get install -y build-essential debhelper devscripts python3 python3-dev curl patchelf
 
       - name: Install uv and PyInstaller
         run: |
@@ -273,7 +279,8 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          dnf -y install git python3 rpm-build rpmdevtools curl
+          # python3-devel provides libpython3.x.so required by PyInstaller on Fedora/RHEL
+          dnf -y install git python3 python3-devel rpm-build rpmdevtools curl patchelf
 
       - name: Checkout repository
         uses: actions/checkout@v4

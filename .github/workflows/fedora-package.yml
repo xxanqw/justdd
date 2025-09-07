@@ -24,7 +24,9 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          dnf -y install git python3 rpm-build rpmdevtools curl ntfs-3g dosfstools rsync polkit parted psmisc util-linux
+          # python3-devel provides libpython3.x.so required by PyInstaller on Fedora/RHEL
+          # patchelf is useful for adjusting ELF binaries if needed
+          dnf -y install git python3 python3-devel rpm-build rpmdevtools curl patchelf ntfs-3g dosfstools rsync polkit parted psmisc util-linux
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,6 +41,9 @@ jobs:
       - name: Install uv
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
+          # Ensure uv (installed into ~/.local/bin) is on PATH
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          # Some environments may place shims in ~/.cargo/bin; add as fallback
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install PyInstaller

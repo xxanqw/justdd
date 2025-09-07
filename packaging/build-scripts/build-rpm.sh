@@ -35,8 +35,9 @@ log_info "Setting up RPM build environment..."
 # Set up RPM build directories
 rpmdev-setuptree
 
-# Copy source files to rpmbuild directory
-cp -r "$PROJECT_ROOT"/* ~/rpmbuild/SOURCES/
+# Copy source files to rpmbuild directory under a versioned subdirectory
+mkdir -p ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}
+cp -r "$PROJECT_ROOT"/* ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}/
 
 # Set up uv virtual environment in the source directory
 cd ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}
@@ -50,6 +51,11 @@ if ! install_uv_dependencies; then
     log_error "Failed to install dependencies with uv"
     exit 1
 fi
+
+# Ensure PyInstaller is available inside the uv-managed venv
+log_info "Installing PyInstaller into the uv virtual environment..."
+"$PWD/.venv/bin/python" -m pip install --upgrade pip
+"$PWD/.venv/bin/python" -m pip install pyinstaller
 
 # Build application with PyInstaller using uv environment
 BUILD_DIR="build"
