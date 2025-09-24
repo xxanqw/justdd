@@ -24,6 +24,12 @@ if ! command -v rpmbuild &> /dev/null; then
     exit 1
 fi
 
+if ! command -v rpmdev-setuptree &> /dev/null; then
+    log_error "rpmdev-setuptree not found. Please install rpmdevtools:"
+    log_info "  sudo dnf install rpmdevtools"
+    exit 1
+fi
+
 # Create working directory
 WORK_DIR="/tmp/justdd-build-rpm"
 rm -rf "$WORK_DIR"
