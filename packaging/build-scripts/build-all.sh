@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 source "$SCRIPT_DIR/common.sh"
 
 VERSION="$(get_version)"
@@ -39,7 +39,7 @@ build_for_distro() {
             log_info "Building Arch Linux package..."
             cd "$PROJECT_ROOT"
             makepkg -f
-            mv *.pkg.tar.zst "$OUTPUT_DIR/" 2>/dev/null || true
+            mv ./*.pkg.tar.zst "$OUTPUT_DIR/" 2>/dev/null || true
             ;;
         *)
             log_warning "Unknown distribution: $target_distro"
@@ -56,7 +56,7 @@ build_for_distro() {
                 log_info "Found makepkg, building Arch package..."
                 cd "$PROJECT_ROOT"
                 makepkg -f
-                mv *.pkg.tar.zst "$OUTPUT_DIR/" 2>/dev/null || true
+                mv ./*.pkg.tar.zst "$OUTPUT_DIR/" 2>/dev/null || true
             else
                 log_error "No supported packaging tools found"
                 log_info "Please install packaging tools for your distribution:"
