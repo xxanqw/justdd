@@ -30,6 +30,9 @@ log_error() {
 
 # Ensure uv is available (the only required tooling besides system-level build deps)
 check_dependencies() {
+    # Ensure common paths are set
+    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+    
     if ! command -v uv &> /dev/null; then
         log_warning "uv not found. Installing..."
         install_uv
@@ -40,16 +43,43 @@ check_dependencies() {
 # Install uv if not available
 install_uv() {
     log_info "Installing uv..."
-    if command -v curl &> /dev/null; then
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-    elif command -v wget &> /dev/null; then
-        wget -qO- https://astral.sh/uv/install.sh | sh
-    else
-        log_error "Need curl or wget to install uv"
-        exit 1
+    
+    # Try pip3 first as a fallback for environments without internet
+    if command -v pip3 &> /dev/null; then
+        log_info "Trying pip3 installation first..."
+        if pip3 install uv --break-system-packages &> /dev/null; then
+            export PATH="$HOME/.local/bin:$PATH"
+            if command -v uv &> /dev/null; then
+                log_success "uv installed via pip3"
+                return 0
+            fi
+        fi
     fi
-    export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
-    command -v uv &> /dev/null || { log_error "uv install failed"; exit 1; }
+    
+    # Fall back to official installer
+    if command -v curl &> /dev/null; then
+        if curl -LsSf https://astral.sh/uv/install.sh | sh; then
+            export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+            if command -v uv &> /dev/null; then
+                log_success "uv installed via curl"
+                return 0
+            fi
+        fi
+    elif command -v wget &> /dev/null; then
+        if wget -qO- https://astral.sh/uv/install.sh | sh; then
+            export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+            if command -v uv &> /dev/null; then
+                log_success "uv installed via wget"
+                return 0
+            fi
+        fi
+    fi
+    
+    log_error "All uv installation methods failed"
+    log_info "Please install uv manually:"
+    log_info "  pip3 install uv --break-system-packages"
+    log_info "  or visit: https://docs.astral.sh/uv/getting-started/installation/"
+    exit 1
     log_success "uv installed"
 }
 
@@ -57,8 +87,11 @@ install_uv() {
 # (Optional) export requirements if needed externally
 create_requirements() {
     [ -f pyproject.toml ] || { log_error "pyproject.toml missing"; return 1; }
-    uv export --format requirements-txt --output-file requirements.txt && \
-        log_success "requirements.txt exported" || log_warning "Failed to export requirements (ignored)"
+    if uv export --format requirements-txt --output-file requirements.txt; then
+        log_success "requirements.txt exported"
+    else
+        log_warning "Failed to export requirements (ignored)"
+    fi
 }
 
 # Set up uv virtual environment
@@ -79,10 +112,19 @@ build_app() {
     local app_name="${1:-justdd}"
     mkdir -p "$output_dir"
     log_info "Building $app_name (PyInstaller via uv)"
+    
+    # Check that icon file exists
+    if [ ! -f "images/icon.png" ]; then
+        log_error "Icon file images/icon.png not found in $(pwd)"
+        return 1
+    fi
+    
     # Ensure pyinstaller import works (installed as dev extra)
+    # Use absolute path for the icon to avoid workpath confusion
+    local icon_path="$(pwd)/images/icon.png"
     uv run pyinstaller \
         --onefile \
-        --add-data "images/icon.png:images" \
+        --add-data "$icon_path:images" \
         --name "$app_name" \
         --distpath "$output_dir" \
         --workpath build \
@@ -117,7 +159,7 @@ log_success() {
 }
 
 # Clean build artifacts
-clean_build() { rm -rf build dist *.spec __pycache__ *.egg-info; }
+clean_build() { rm -rf build dist ./*.spec __pycache__ ./*.egg-info; }
 
 # Get version from constants.py
 get_version() {

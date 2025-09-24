@@ -31,7 +31,12 @@ jobs:
 
       - name: Install uv
         run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
+          # Try pip first as it's more reliable in CI environments
+          if pip3 install uv --break-system-packages 2>/dev/null; then
+            echo "uv installed via pip3"
+          else
+            curl -LsSf https://astral.sh/uv/install.sh | sh
+          fi
           echo "$HOME/.local/bin" >> $GITHUB_PATH
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 

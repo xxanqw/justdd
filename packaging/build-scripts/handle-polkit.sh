@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 source "$SCRIPT_DIR/common.sh"
 
 # Function to detect polkit package name
@@ -131,8 +131,11 @@ create_polkit_policy() {
 
 # Main function
 main() {
-    local distro="$(detect_distro)"
-    local polkit_package="$(detect_polkit_package "$distro")"
+    local distro
+    local polkit_package
+    
+    distro="$(detect_distro)"
+    polkit_package="$(detect_polkit_package "$distro")"
 
     log_info "Detected distribution: $distro"
     log_info "Using polkit package: $polkit_package"

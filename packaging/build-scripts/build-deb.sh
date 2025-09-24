@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 source "$SCRIPT_DIR/common.sh"
 
 PACKAGE_NAME="justdd"
@@ -28,20 +28,21 @@ fi
 WORK_DIR="/tmp/justdd-build-deb"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
-cd "$WORK_DIR"
 
 log_info "Setting up source directory..."
 
 # Copy source files
-cp -r "$PROJECT_ROOT"/* .
+cp -r "$PROJECT_ROOT"/* "$WORK_DIR"/
+cd "$WORK_DIR"
 
+# Set up dependencies and build in the copied directory
 sync_deps
 
 # (Optional) export requirements
 create_requirements || true
 
 # Build application (uv run pyinstaller)
-BUILD_DIR="debian/justdd/usr/bin"
+BUILD_DIR="build/bin"
 build_app "$BUILD_DIR" "$PACKAGE_NAME"
 
 # Create Debian packaging structure
@@ -68,7 +69,7 @@ override_dh_auto_install:
 	dh_auto_install
 
 	# Install binary (already built)
-	install -Dm755 debian/justdd/usr/bin/justdd debian/justdd/usr/bin/justdd
+	install -Dm755 build/bin/justdd debian/justdd/usr/bin/justdd
 
 	# Install desktop file
 	install -Dm644 justdd.desktop debian/justdd/usr/share/applications/justdd.desktop
@@ -96,8 +97,8 @@ justdd (${VERSION}-1) unstable; urgency=medium
 EOF
 fi
 
-# Create compat file
-echo "13" > debian/compat
+# Remove compat file to avoid conflict with debhelper-compat in control
+rm -f debian/compat
 
 # Copy desktop and policy files
 cp "$PROJECT_ROOT/packaging/debian/justdd.desktop" .
@@ -108,8 +109,8 @@ chmod +x debian/rules
 
 log_info "Building Debian package..."
 
-# Build the package
-dpkg-buildpackage -us -uc -b
+# Build the package (override build dependencies since we use pre-built binary)
+dpkg-buildpackage -us -uc -b -d
 
 log_success "Debian package built successfully!"
 

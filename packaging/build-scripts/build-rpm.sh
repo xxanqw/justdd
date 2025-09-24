@@ -5,7 +5,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+PROJECT_ROOT="$(dirname "$(dirname "$SCRIPT_DIR")")"
 source "$SCRIPT_DIR/common.sh"
 
 PACKAGE_NAME="justdd"
@@ -28,7 +28,6 @@ fi
 WORK_DIR="/tmp/justdd-build-rpm"
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
-cd "$WORK_DIR"
 
 log_info "Setting up RPM build environment..."
 
@@ -36,10 +35,10 @@ log_info "Setting up RPM build environment..."
 rpmdev-setuptree
 
 # Copy source files to rpmbuild directory under a versioned subdirectory
-mkdir -p ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}
-cp -r "$PROJECT_ROOT"/* ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}/
+mkdir -p ~/rpmbuild/SOURCES/"${PACKAGE_NAME}-${VERSION}"
+cp -r "$PROJECT_ROOT"/* ~/rpmbuild/SOURCES/"${PACKAGE_NAME}-${VERSION}"/
 
-cd ~/rpmbuild/SOURCES/${PACKAGE_NAME}-${VERSION}
+cd ~/rpmbuild/SOURCES/"${PACKAGE_NAME}-${VERSION}"
 sync_deps
 
 # Build application (uv run pyinstaller)
@@ -48,7 +47,7 @@ build_app "$BUILD_DIR" "$PACKAGE_NAME"
 
 # Create tarball with pre-built binary
 cd ~/rpmbuild/SOURCES
-tar czf ${PACKAGE_NAME}-${VERSION}.tar.gz ${PACKAGE_NAME}-${VERSION}
+tar czf "${PACKAGE_NAME}-${VERSION}.tar.gz" "${PACKAGE_NAME}-${VERSION}"
 
 # Copy spec file
 cp "$PROJECT_ROOT/packaging/rpm/justdd.spec" ~/rpmbuild/SPECS/
