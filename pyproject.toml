@@ -16,3 +16,14 @@ dependencies = [
 dev = [
     "pyinstaller"
 ]
+
+[project.scripts]
+justdd = "app:main"
+
+[tool.setuptools]
+packages = ["widgets", "widgets.fetchers"]
+py-modules = ["app", "styles", "update_checker", "constants"]
+
+[build-system]
+requires = ["setuptools>=80.3.1", "wheel"]
+build-backend = "setuptools.build_meta"
