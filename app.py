@@ -2599,7 +2599,7 @@ class EtcherWizardApp(QMainWindow):
         self.logs_window.append_log(f"Update check failed: {error_message}")
 
 
-if __name__ == "__main__":
+def main():
     os.environ["QT_LOGGING_RULES"] = "qt.qpa.wayland.textinput=false"
 
     app = QApplication(sys.argv)
@@ -2613,3 +2613,6 @@ if __name__ == "__main__":
     window.show()
 
     sys.exit(app.exec())
+
+if __name__ == "__main__":
+    main()
