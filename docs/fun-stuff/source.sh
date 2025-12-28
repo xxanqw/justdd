@@ -39,7 +39,7 @@ DISTRO=$(detect_distro)
 echo "Detected distribution: $DISTRO"
 
 # Display warning about required dependencies
-echo "⚠️ WARNING ⚠️"
+echo "WARNING: required dependencies"
 echo "This script is intended for systems with the following packages installed:"
 echo "- ntfs-3g"
 echo "- polkit"
@@ -51,7 +51,7 @@ read -r < /dev/tty
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then
     echo "uv is not installed. Installing instructions for $DISTRO:"
-    
+
     case $DISTRO in
         "fedora")
             echo "Run: pip install uv"
@@ -94,7 +94,7 @@ if ! command -v uv &> /dev/null; then
             echo "Alternatively: pipx install uv (if pipx is installed)"
             ;;
     esac
-    
+
     exit 1
 else
     echo "uv is installed. Building application..."
@@ -102,7 +102,7 @@ else
     git clone https://github.com/xxanqw/justdd.git
 
     cd justdd
-    
+
     uv sync --all-extras
 
     uv run pyinstaller --onefile \

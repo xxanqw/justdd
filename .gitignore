@@ -11,12 +11,13 @@ build/
 dist/
 pkg/
 src/
+distbuild*/
 
 # Virtual environments
 .venv
 .python-version
 
 # Distribution files
-justdd
 justdd-0.1.0-1-any.pkg.tar.zst
 .SRCINFO
+*.egg-info/

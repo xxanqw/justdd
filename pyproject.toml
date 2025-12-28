@@ -1,16 +1,41 @@
 [project]
 name = "justdd"
-version = "0.1.4-2"
+version = "0.1.5"
 description = "A simple, open-source tool to write Linux and Windows ISO images to USB drives."
 readme = "README.md"
 requires-python = ">=3.9, <3.14"
 dependencies = [
-    "PySide6",
+    "pyside6",
     "requests",
     "beautifulsoup4",
-    "desktop-notifier>=6.1.1",
-    "aiohttp>=3.12.11",
+    "desktop-notifier",
+    "aiohttp",
+    "qtawesome",
+    "nicegui",
+    "pywebview",
+    "pygobject",
 ]
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [
+    { name = "xxanqw" },
+]
+maintainers = [
+    { name = "Ivan Potiienko", email = "contact@xxanqw.pp.ua" },
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Utilities",
+    "Environment :: X11 Applications :: Qt",
+]
+keywords = ["usb", "dd", "iso", "image-writer", "flashing", "justdd"]
+urls = { "Homepage" = "https://github.com/xxanqw/justdd" }
 
 [project.optional-dependencies]
 dev = [
@@ -18,11 +43,11 @@ dev = [
 ]
 
 [project.scripts]
-justdd = "app:main"
+justdd = "justdd.app:main"
 
 [tool.setuptools]
-packages = ["widgets", "widgets.fetchers"]
-py-modules = ["app", "styles", "update_checker", "constants"]
+packages = { find = {} }
+include-package-data = true
 
 [build-system]
 requires = ["setuptools>=80.3.1", "wheel"]

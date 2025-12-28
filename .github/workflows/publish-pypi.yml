@@ -1,0 +1,107 @@
+name: Publish Python package
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Target repository to publish to (pypi or testpypi)"
+        required: true
+        default: "pypi"
+      python-version:
+        description: "Python version to use for the build step"
+        required: false
+        default: "3.13"
+
+jobs:
+  build-and-publish:
+    name: Build, validate and publish
+    runs-on: ubuntu-latest
+    concurrency:
+      group: "publish-pypi-${{ github.ref }}"
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv (with cache)
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python via uv
+        run: uv python install ${{ github.event.inputs.python-version }}
+
+      - name: Install publishing tools (twine)
+        run: uv pip install --upgrade twine
+
+      - name: Build distributions
+        run: uv build
+
+      - name: Ensure docs are not included in distributions
+        run: |
+          python - <<'PY'
+          import tarfile
+          import zipfile
+          import sys
+          import pathlib
+
+          dist = pathlib.Path('dist')
+          found = []
+
+          # Check source distributions (.tar.gz)
+          for p in sorted(dist.glob('*.tar.gz')):
+              with tarfile.open(p) as t:
+                  for member in t.getmembers():
+                      if str(member.name).startswith('docs/'):
+                          found.append(f'{p}: {member.name}')
+
+          # Check wheels (.whl)
+          for p in sorted(dist.glob('*.whl')):
+              with zipfile.ZipFile(p) as z:
+                  for name in z.namelist():
+                      if name.startswith('docs/'):
+                          found.append(f'{p}: {name}')
+
+          if found:
+              print('ERROR: docs/ was found in the following distribution files:')
+              for line in found:
+                  print(line)
+              sys.exit(1)
+
+          print('OK: no docs/ found in distributions.')
+          PY
+
+      - name: Verify built distributions (twine check)
+        run: |
+          uv run python - <<'PY'
+          import glob, subprocess, sys
+
+          dists = sorted(glob.glob('dist/*.tar.gz') + glob.glob('dist/*.whl'))
+          if not dists:
+              print('No distribution files found', file=sys.stderr)
+              sys.exit(1)
+          print('twine check on: ', dists)
+          subprocess.check_call([sys.executable, '-m', 'twine', 'check'] + dists)
+          PY
+
+      - name: Smoke test (wheel)
+        run: uv run --isolated --no-project --with dist/*.whl python tests/smoke_test.py
+
+      - name: Smoke test (source distribution)
+        run: uv run --isolated --no-project --with dist/*.tar.gz python tests/smoke_test.py
+
+      - name: Publish to Test PyPI (manual dispatch only)
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.repository == 'testpypi' }}
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.TEST_PYPI_API_TOKEN }}
+          UV_PUBLISH_URL: https://test.pypi.org/legacy/
+        run: uv publish
+
+      - name: Publish to PyPI (on tag push or manual dispatch)
+        if: ${{ startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.event.inputs.repository == 'pypi') }}
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: uv publish
