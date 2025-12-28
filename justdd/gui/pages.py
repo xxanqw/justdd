@@ -189,6 +189,23 @@ class PartitionSchemeSelectionPage(QWidget):
         mbr_layout.addWidget(mbr_desc)
         mbr_layout.addStretch()
         self.mbr_button.setLayout(mbr_layout)
+        # Disable MBR option if 'ms-sys' is not available on the system
+        try:
+            from shutil import which
+
+            ms_ok = which("ms-sys") is not None
+        except Exception:
+            ms_ok = False
+        try:
+            self.mbr_button.setEnabled(bool(ms_ok))
+            if not ms_ok:
+                self.mbr_button.setToolTip("ms-sys not found; MBR creation disabled")
+                if self.mbr_button.isChecked():
+                    self.gpt_button.setChecked(True)
+            else:
+                self.mbr_button.setToolTip("")
+        except Exception:
+            pass
 
         buttons_layout.addWidget(self.gpt_button)
         buttons_layout.addWidget(self.mbr_button)
@@ -244,6 +261,26 @@ class SelectionPage(QWidget):
     selection_changed = Signal()
     flash_requested = Signal()
 
+    def _update_mbr_availability(self):
+        try:
+            from shutil import which
+
+            ok = which("ms-sys") is not None
+        except Exception:
+            ok = False
+
+        try:
+            self.mbr_radio.setEnabled(bool(ok))
+            if not ok:
+                self.mbr_radio.setToolTip("ms-sys not found; MBR creation disabled")
+                if self.mbr_radio.isChecked():
+                    # Fall back to the safe default
+                    self.gpt_radio.setChecked(True)
+            else:
+                self.mbr_radio.setToolTip("")
+        except Exception:
+            pass
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.iso_path = None
@@ -251,6 +288,8 @@ class SelectionPage(QWidget):
         self.iso_details = {}
         self.selected_drive = None
         self.partition_scheme = "gpt"
+        self._screen_handle = None
+        self._window_event_filter_installed = False
         self.setup_ui()
         try:
             self.refresh_drives()
@@ -410,11 +449,19 @@ class SelectionPage(QWidget):
         self.drive_list.itemSelectionChanged.connect(self._on_drive_selection_changed)
         self.drive_list.hide()
 
-        # Partition options (visible only for Windows ISOs)
-        right_widget = QWidget()
+        right_widget = QFrame(self)
+        right_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        right_widget.setObjectName("partitionOverlay")
+        right_widget.setStyleSheet(
+            "QFrame#partitionOverlay { background-color: rgba(43,43,43,220); border-radius: 6px; border: 1px solid rgba(80,80,80,200); }"
+            "QFrame#partitionOverlay QLabel { color: #ffffff; }"
+        )
+        right_widget.setMinimumWidth(140)
+        right_widget.setMaximumWidth(260)
         right_layout = QVBoxLayout(right_widget)
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(8)
+        right_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         ptitle = QLabel("Partition Scheme")
         ptitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -426,27 +473,26 @@ class SelectionPage(QWidget):
         self.gpt_radio.toggled.connect(lambda: self.selection_changed.emit())
         self.mbr_radio.toggled.connect(lambda: self.selection_changed.emit())
 
-        right_layout.addWidget(ptitle)
-        right_layout.addWidget(self.gpt_radio)
-        right_layout.addWidget(self.mbr_radio)
+        right_layout.addWidget(ptitle, alignment=Qt.AlignmentFlag.AlignHCenter)
+        right_layout.addWidget(self.gpt_radio, alignment=Qt.AlignmentFlag.AlignHCenter)
+        right_layout.addWidget(self.mbr_radio, alignment=Qt.AlignmentFlag.AlignHCenter)
+        # Keep some spacing, but do not add this popup to the main layout.
         right_layout.addStretch(1)
         right_widget.hide()
         self._partition_widget = right_widget
+        try:
+            self._update_mbr_availability()
+        except Exception:
+            pass
 
         main_layout = QVBoxLayout(self)
-        # Slightly larger margins to better center the steps in wider windows
         main_layout.setContentsMargins(40, 30, 40, 30)
         main_layout.addWidget(container, 0, alignment=Qt.AlignmentFlag.AlignCenter)
-        main_layout.addWidget(right_widget, 0, alignment=Qt.AlignmentFlag.AlignCenter)
 
-        # Connect signals to keep the step buttons in sync with state
         self.selection_changed.connect(self.update_button_states)
-        # Ensure the initial visual state is correct
         self.update_button_states()
 
     def open_drive_selector_dialog(self):
-        """Show a simple dialog where the user can pick a removable drive."""
-        # Refresh drives list first
         try:
             self.refresh_drives()
         except Exception:
@@ -458,7 +504,6 @@ class SelectionPage(QWidget):
         layout = QVBoxLayout(dlg)
         list_widget = QListWidget()
 
-        # Copy items from internal drive_list so we can present a trimmed/centered dialog
         for i in range(self.drive_list.count()):
             orig = self.drive_list.item(i)
             new_item = QListWidgetItem(orig.text())
@@ -486,7 +531,6 @@ class SelectionPage(QWidget):
                 drive_data = sel.data(Qt.ItemDataRole.UserRole)
                 if drive_data:
                     self.selected_drive = drive_data
-                    # Be defensive when reading from the drive_data object
                     try:
                         name = drive_data.get("name", "Selected Drive")
                     except Exception:
@@ -504,8 +548,6 @@ class SelectionPage(QWidget):
             pass
 
     def update_button_states(self):
-        """Enable/disable step buttons based on current selection state."""
-
         # Enable the "Select target" control once an image is chosen
         self.select_target_button.setEnabled(bool(self.iso_path))
 
@@ -523,9 +565,6 @@ class SelectionPage(QWidget):
         # Enable the Flash button only when both an ISO and a drive are selected
         flash_enabled = self.has_valid_selection()
         self.flash_button.setEnabled(flash_enabled)
-
-        # Reset any inline button styles so Fusion defaults are used consistently.
-        # Also keep enabled/disabled state driven by the selection logic only.
         try:
             self.select_image_button.setStyleSheet("")
             self.select_target_button.setStyleSheet("")
@@ -533,15 +572,19 @@ class SelectionPage(QWidget):
         except Exception:
             pass
 
-        # Show partition options only for Windows ISOs
+        # Show partition options only for Windows ISOs (as a floating popup).
         if getattr(self, "iso_type", "unknown") == "windows":
             try:
-                self._partition_widget.show()
+                self._update_mbr_availability()
+            except Exception:
+                pass
+            try:
+                self._show_partition_popover()
             except Exception:
                 pass
         else:
             try:
-                self._partition_widget.hide()
+                self._hide_partition_popover()
             except Exception:
                 pass
 
@@ -556,6 +599,277 @@ class SelectionPage(QWidget):
                 self.selected_drive_label.setText("Selected Drive")
         else:
             self.selected_drive_label.setText("No drive selected")
+
+    def _show_partition_popover(self):
+        if not hasattr(self, "_partition_widget") or self._partition_widget is None:
+            return
+        try:
+            try:
+                if (
+                    getattr(self, "iso_meta_label", None)
+                    and self.iso_meta_label.isVisible()
+                ):
+                    anchor = self.iso_meta_label
+                elif (
+                    getattr(self, "iso_name_label", None)
+                    and self.iso_name_label.isVisible()
+                ):
+                    anchor = self.iso_name_label
+                else:
+                    anchor = self.select_image_button
+            except Exception:
+                anchor = self.select_image_button
+
+            center_local = anchor.mapTo(self, anchor.rect().center())
+            bottom_local = anchor.mapTo(self, anchor.rect().bottomLeft())
+
+            try:
+                self._partition_widget.adjustSize()
+            except Exception:
+                pass
+            pop_hint = self._partition_widget.sizeHint()
+            pop_width = (
+                pop_hint.width()
+                if pop_hint.isValid()
+                else self._partition_widget.width()
+            )
+
+            try:
+                left_local = self.select_image_button.mapTo(
+                    self, self.select_image_button.rect().bottomLeft()
+                )
+                x = left_local.x()
+            except Exception:
+                x = max(8, center_local.x() - (pop_width // 2))
+            y = bottom_local.y() + 8  # small gap
+
+            try:
+                pop_height = (
+                    pop_hint.height()
+                    if pop_hint.isValid()
+                    else self._partition_widget.height()
+                )
+                page_h = self.height()
+                if y + pop_height > page_h - 8:
+                    alt_y = bottom_local.y() - pop_height - 8
+                    if alt_y >= 8:
+                        y = alt_y
+                    else:
+                        y = max(8, page_h - pop_height - 8)
+            except Exception:
+                pass
+
+            try:
+                btn_w = self.select_image_button.width()
+                # match the button width exactly to ensure visual consistency
+                self._partition_widget.setFixedWidth(btn_w)
+                pop_width = self._partition_widget.width()
+            except Exception:
+                pass
+
+            try:
+                page_w = self.width()
+                page_h = self.height()
+                pop_height = (
+                    pop_hint.height()
+                    if pop_hint.isValid()
+                    else self._partition_widget.height()
+                )
+                if x < 8:
+                    x = 8
+                if x + pop_width > page_w - 8:
+                    x = page_w - pop_width - 8
+                if y + pop_height > page_h - 8:
+                    alt_y = bottom_local.y() - pop_height - 8
+                    if alt_y >= 8:
+                        y = alt_y
+                    else:
+                        y = max(8, page_h - pop_height - 8)
+                if y < 8:
+                    y = 8
+            except Exception:
+                pass
+
+            self._partition_widget.move(x, y)
+            self._partition_widget.raise_()
+            self._partition_widget.show()
+            try:
+                self._position_partition_overlay()
+            except Exception:
+                pass
+
+            try:
+                self._attach_screen_change_handler()
+            except Exception:
+                pass
+            try:
+                self._attach_window_event_filter()
+            except Exception:
+                pass
+        except Exception:
+            try:
+                self._partition_widget.show()
+            except Exception:
+                pass
+
+    def _hide_partition_popover(self):
+        try:
+            pop = getattr(self, "_partition_widget", None)
+            if pop and pop.isVisible():
+                pop.hide()
+        except Exception:
+            pass
+        try:
+            self._detach_screen_change_handler()
+        except Exception:
+            pass
+        try:
+            self._detach_window_event_filter()
+        except Exception:
+            pass
+
+    def _attach_screen_change_handler(self):
+        try:
+            win = self.window()
+            if win is None:
+                return
+            wh = win.windowHandle()
+            if wh is None:
+                return
+            if getattr(self, "_screen_handle", None) is wh:
+                return
+            try:
+                wh.screenChanged.connect(self._on_screen_changed)
+                self._screen_handle = wh
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _detach_screen_change_handler(self):
+        try:
+            wh = getattr(self, "_screen_handle", None)
+            if wh is not None:
+                try:
+                    wh.screenChanged.disconnect(self._on_screen_changed)
+                except Exception:
+                    pass
+            self._screen_handle = None
+        except Exception:
+            pass
+
+    def _on_screen_changed(self, screen):
+        try:
+            self._hide_partition_popover()
+        except Exception:
+            pass
+
+    def _attach_window_event_filter(self):
+        try:
+            win = self.window()
+            if not win or getattr(self, "_window_event_filter_installed", False):
+                return
+            try:
+                win.installEventFilter(self)
+                self._window_event_filter_installed = True
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    def _detach_window_event_filter(self):
+        try:
+            win = self.window()
+            if not win or not getattr(self, "_window_event_filter_installed", False):
+                return
+            try:
+                win.removeEventFilter(self)
+            except Exception:
+                pass
+            self._window_event_filter_installed = False
+        except Exception:
+            pass
+
+    def _position_partition_overlay(self):
+        try:
+            pop = getattr(self, "_partition_widget", None)
+            if not pop or not pop.isVisible():
+                return
+            try:
+                if (
+                    getattr(self, "iso_meta_label", None)
+                    and self.iso_meta_label.isVisible()
+                ):
+                    anchor = self.iso_meta_label
+                elif (
+                    getattr(self, "iso_name_label", None)
+                    and self.iso_name_label.isVisible()
+                ):
+                    anchor = self.iso_name_label
+                else:
+                    anchor = self.file_label
+            except Exception:
+                anchor = self.file_label
+            center_local = anchor.mapTo(self, anchor.rect().center())
+            bottom_local = anchor.mapTo(self, anchor.rect().bottomLeft())
+            try:
+                pop.adjustSize()
+            except Exception:
+                pass
+            pop_hint = pop.sizeHint()
+            pop_width = pop_hint.width() if pop_hint.isValid() else pop.width()
+            pop_height = pop_hint.height() if pop_hint.isValid() else pop.height()
+            try:
+                left_local = self.select_image_button.mapTo(
+                    self, self.select_image_button.rect().bottomLeft()
+                )
+                x = left_local.x()
+            except Exception:
+                x = max(8, center_local.x() - (pop_width // 2))
+            y = bottom_local.y() + 8
+            try:
+                page_w = self.width()
+                page_h = self.height()
+                if x < 8:
+                    x = 8
+                if x + pop_width > page_w - 8:
+                    x = page_w - pop_width - 8
+                if y + pop_height > page_h - 8:
+                    alt_y = bottom_local.y() - pop_height - 8
+                    if alt_y >= 8:
+                        y = alt_y
+                    else:
+                        y = max(8, page_h - pop_height - 8)
+                if y < 8:
+                    y = 8
+            except Exception:
+                pass
+            pop.move(x, y)
+            pop.raise_()
+        except Exception:
+            pass
+
+    def eventFilter(self, obj, event):
+        try:
+            from PySide6.QtCore import QEvent
+
+            move_ev = getattr(QEvent, "Move", None)
+            resize_ev = getattr(QEvent, "Resize", None)
+            if obj is self.window() and (
+                (move_ev is not None and event.type() == move_ev)
+                or (resize_ev is not None and event.type() == resize_ev)
+            ):
+                try:
+                    if (
+                        getattr(self, "_partition_widget", None)
+                        and self._partition_widget.isVisible()
+                    ):
+                        self._position_partition_overlay()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        return False
 
     def _accent_color(self):
         """Return the widget palette's highlight color as a hex string, falling back to an Etcher-like cyan.
@@ -622,6 +936,25 @@ class SelectionPage(QWidget):
                 except Exception:
                     self.iso_type = "unknown"
                     self.iso_details = {}
+                if self.iso_type == "windows":
+                    try:
+                        from shutil import which
+
+                        from PySide6.QtWidgets import QMessageBox
+
+                        if which("ntfs-3g") is None:
+                            QMessageBox.warning(
+                                self,
+                                "ntfs-3g required",
+                                "The 'ntfs-3g' utility is required to work with Windows ISOs.\nPlease install 'ntfs-3g' and try again.",
+                            )
+                            try:
+                                self.reset_selection()
+                            except Exception:
+                                pass
+                            return
+                    except Exception:
+                        pass
                 # Update UI: show elided filename on the Select button and metadata below
                 filename = os.path.basename(file_path)
                 metrics = self.select_image_button.fontMetrics()
@@ -662,9 +995,15 @@ class SelectionPage(QWidget):
                     pass  # Do not show any icon on error
                 # Show partition options only for Windows ISOs
                 if self.iso_type == "windows":
-                    self._partition_widget.show()
+                    try:
+                        self._show_partition_popover()
+                    except Exception:
+                        pass
                 else:
-                    self._partition_widget.hide()
+                    try:
+                        self._hide_partition_popover()
+                    except Exception:
+                        pass
                 self.selection_changed.emit()
 
     def refresh_drives(self):
@@ -767,7 +1106,16 @@ class SelectionPage(QWidget):
         return self.iso_details
 
     def get_selected_scheme(self):
-        return "mbr" if self.mbr_radio.isChecked() else "gpt"
+        try:
+            if (
+                getattr(self, "mbr_radio", None)
+                and self.mbr_radio.isEnabled()
+                and self.mbr_radio.isChecked()
+            ):
+                return "mbr"
+        except Exception:
+            pass
+        return "gpt"
 
     def has_valid_selection(self):
         drive, _ = self.get_selected_drive()
@@ -780,9 +1128,13 @@ class SelectionPage(QWidget):
         self.selected_drive = None
 
         self.file_label.setText("Please select an ISO")
-        font = QFont()
-        font.setPointSize(12)
-        self.file_label.setFont(font)
+        try:
+            self.file_label.setFont(self.font())
+        except Exception:
+            try:
+                self.file_label.setFont(QFont())
+            except Exception:
+                pass
         # Reset the primary Select Image button text, tooltip and any applied styling
         try:
             self.select_image_button.setText("Select Image")
@@ -830,7 +1182,7 @@ class SelectionPage(QWidget):
         except Exception:
             pass
 
-        self._partition_widget.hide()
+        self._hide_partition_popover()
         self.gpt_radio.setChecked(True)
         self.selection_changed.emit()
 

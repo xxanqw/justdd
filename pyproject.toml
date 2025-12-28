@@ -1,6 +1,6 @@
 [project]
 name = "justdd"
-version = "0.1.5"
+version = "0.1.5-2"
 description = "A simple, open-source tool to write Linux and Windows ISO images to USB drives."
 readme = "README.md"
 requires-python = ">=3.9, <3.14"
