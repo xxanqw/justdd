@@ -10,10 +10,7 @@ dependencies = [
     "beautifulsoup4",
     "desktop-notifier",
     "aiohttp",
-    "qtawesome",
-    "nicegui",
-    "pywebview",
-    "pygobject",
+    "qtawesome"
 ]
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
