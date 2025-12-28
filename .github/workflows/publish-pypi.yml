@@ -15,6 +15,9 @@ on:
         required: false
         default: "3.13"
 
+permissions:
+  contents: read
+
 jobs:
   build-and-publish:
     name: Build, validate and publish
