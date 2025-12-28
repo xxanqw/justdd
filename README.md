@@ -1,6 +1,6 @@
 # JustDD
 
-JustDD is a small, focused USB image writer with a simple wizard-style UI. It helps you write Linux and Windows ISO images to USB drives safely and with progress feedback.
+JustDD is a small, focused USB image writer with a simple wizard-style UI. It helps you write Linux and Windows ISO images to USB drives safely and with progress feedback.  
 [![PyPI Version](https://img.shields.io/pypi/v/justdd.svg)](https://pypi.org/project/justdd)
 
 Note: You can use the app either by running with `uvx` (recommended), `pipx`, or building from source:
