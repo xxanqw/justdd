@@ -33,6 +33,9 @@ jobs:
 
       - name: Install Python via uv
         run: uv python install ${{ github.event.inputs.python-version }}
+        
+      - name: Sync dependencies
+        run: uv sync
 
       - name: Install publishing tools (twine)
         run: uv pip install --upgrade twine
