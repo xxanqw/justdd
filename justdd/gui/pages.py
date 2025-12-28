@@ -1424,6 +1424,13 @@ class FlashPage(QWidget):
             except Exception:
                 accent_color = "#00b5ff"  # fallback to blue
 
+            # Create an icon widget using the accent color (ensure variable is always defined)
+            icon_widget = make_icon_widget("fa5s.bolt", color=accent_color, size=48)
+            try:
+                icon_widget.setFixedSize(48, 48)
+            except Exception:
+                pass
+
         except Exception:
             # Fallback to neutral placeholder (no emoji)
             icon_widget = QLabel()
