@@ -47,6 +47,9 @@ justdd = "justdd.app:main"
 packages = { find = {} }
 include-package-data = true
 
+[tool.setuptools.package-data]
+"justdd" = ["gui/*.qss"]
+
 [build-system]
 requires = ["setuptools>=80.3.1", "wheel"]
 build-backend = "setuptools.build_meta"

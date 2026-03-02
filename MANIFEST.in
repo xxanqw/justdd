@@ -1,4 +1,5 @@
 prune docs
 include README.md
 include LICENSE
+recursive-include justdd *.qss
 global-exclude __pycache__ *.py[cod] *.so *.dll
