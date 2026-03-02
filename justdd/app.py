@@ -53,6 +53,15 @@ def main(argv: Optional[list[str]] = None) -> int:
         except Exception:
             logger.debug("Failed to apply Qt 'Fusion' style.", exc_info=True)
 
+        try:
+            from pathlib import Path
+            style_path = Path(__file__).parent / "gui" / "style.qss"
+            if style_path.exists():
+                with open(style_path, "r", encoding="utf-8") as f:
+                    app.setStyleSheet(f.read())
+        except Exception as exc:
+            logger.debug(f"Failed to load custom stylesheet: {exc}", exc_info=True)
+
         window = JustDDApp()
         window.show()
 

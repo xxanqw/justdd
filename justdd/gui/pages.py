@@ -1754,81 +1754,125 @@ class FlashPage(QWidget):
         self.setup_ui()
 
     def setup_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(50, 0, 50, 50)
-        main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(40, 40, 40, 40)
+        main_layout.setSpacing(30)
 
-        # Create a wide container for centering content
-        container = QWidget()
-        container.setMinimumWidth(600)
-        container_layout = QVBoxLayout(container)
-        container_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # --- Left Side: Progress ---
+        left_container = QWidget()
+        left_layout = QVBoxLayout(left_container)
+        left_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        left_layout.setSpacing(15)
 
         try:
             from PySide6.QtGui import QPalette
-
             from .icons import make_icon_widget
 
-            # Use system accent color for the icon
             accent_color = None
             try:
                 accent_color = self.palette().color(QPalette.ColorRole.Highlight).name()
             except Exception:
                 accent_color = "#00b5ff"  # fallback to blue
 
-            # Create an icon widget using the accent color (ensure variable is always defined)
-            icon_widget = make_icon_widget("fa5s.bolt", color=accent_color, size=48)
+            icon_widget = make_icon_widget("fa5s.bolt", color=accent_color, size=80)
             try:
-                icon_widget.setFixedSize(48, 48)
+                icon_widget.setFixedSize(80, 80)
             except Exception:
                 pass
-
         except Exception:
-            # Fallback to neutral placeholder (no emoji)
             icon_widget = QLabel()
             icon_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
             try:
-                icon_widget.setFixedSize(48, 48)
+                icon_widget.setFixedSize(80, 80)
             except Exception:
                 pass
 
         flashing_label = QLabel("Flashing...")
         font = QFont()
-        font.setPointSize(18)
+        font.setPointSize(28)
         font.setBold(True)
         flashing_label.setFont(font)
         flashing_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         self.status_label = QLabel("Preparing to flash...")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_label.setMinimumWidth(400)
+        self.status_label.setMinimumWidth(350)
         font = QFont()
         font.setPointSize(12)
-        font.setBold(True)
         self.status_label.setFont(font)
         self.status_label.setWordWrap(True)
+        self.status_label.setStyleSheet("color: #aaaaaa;")
 
         self.progress_bar = QProgressBar()
         self.progress_bar.setMinimum(0)
         self.progress_bar.setMaximum(100)
         self.progress_bar.setValue(0)
-        self.progress_bar.setMinimumWidth(400)
-        self.progress_bar.setMinimumHeight(30)
+        self.progress_bar.setMinimumWidth(350)
+        self.progress_bar.setMinimumHeight(25)
+        self.progress_bar.setTextVisible(True)
+        self.progress_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        # Etcher-like progress bar styling
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background-color: #2b2b2b;
+                border: none;
+                border-radius: 12px;
+                color: #ffffff;
+                font-weight: bold;
+                font-size: 13px;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background-color: qlineargradient(spread:pad, x1:0, y1:0, x2:1, y2:0, stop:0 #1976D2, stop:1 #00b5ff);
+                border-radius: 12px;
+            }
+        """)
 
-        container_layout.addStretch(1)
-        container_layout.addWidget(icon_widget, alignment=Qt.AlignmentFlag.AlignCenter)
-        container_layout.addWidget(
-            flashing_label, alignment=Qt.AlignmentFlag.AlignCenter
-        )
-        container_layout.addWidget(
-            self.status_label, alignment=Qt.AlignmentFlag.AlignCenter
-        )
-        container_layout.addWidget(
-            self.progress_bar, alignment=Qt.AlignmentFlag.AlignCenter
-        )
-        container_layout.addStretch(1)
+        left_layout.addStretch(1)
+        left_layout.addWidget(icon_widget, alignment=Qt.AlignmentFlag.AlignCenter)
+        left_layout.addSpacing(10)
+        left_layout.addWidget(flashing_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        left_layout.addSpacing(20)
+        left_layout.addWidget(self.progress_bar, alignment=Qt.AlignmentFlag.AlignCenter)
+        left_layout.addSpacing(5)
+        left_layout.addWidget(self.status_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        left_layout.addStretch(1)
 
-        main_layout.addWidget(container, alignment=Qt.AlignmentFlag.AlignCenter)
+        # --- Right Side: Logs ---
+        right_container = QWidget()
+        right_layout = QVBoxLayout(right_container)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        
+        log_title = QLabel("Operation Logs")
+        font = QFont()
+        font.setPointSize(14)
+        font.setBold(True)
+        log_title.setFont(font)
+        log_title.setStyleSheet("color: #ffffff;")
+        
+        from PySide6.QtWidgets import QPlainTextEdit
+        self.log_view = QPlainTextEdit()
+        self.log_view.setReadOnly(True)
+        self.log_view.setMinimumWidth(350)
+        self.log_view.setStyleSheet("""
+            QPlainTextEdit {
+                background-color: #0f0f0f;
+                color: #00ff00;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 11px;
+                border: 1px solid #2a2a2a;
+                border-radius: 8px;
+                padding: 10px;
+            }
+        """)
+
+        right_layout.addWidget(log_title)
+        right_layout.addSpacing(10)
+        right_layout.addWidget(self.log_view)
+
+        # Add both to main layout
+        main_layout.addWidget(left_container, stretch=1)
+        main_layout.addWidget(right_container, stretch=1)
 
     def set_flash_info(
         self, iso_path, drive_path, drive_display, iso_type="unknown", iso_details=None
@@ -1866,6 +1910,9 @@ class FlashPage(QWidget):
     def start_flash(self):
         self.flashing = True
 
+        if hasattr(self, 'log_view'):
+            self.log_view.clear()
+
         self.progress_bar.setValue(0)
         self.status_label.setText("Preparing to flash...")
         f = QFont()
@@ -1875,6 +1922,13 @@ class FlashPage(QWidget):
 
     def update_progress(self, value):
         self.progress_bar.setValue(value)
+
+    def update_log(self, message):
+        if hasattr(self, 'log_view'):
+            self.log_view.appendPlainText(message)
+            scrollbar = self.log_view.verticalScrollBar()
+            if scrollbar:
+                scrollbar.setValue(scrollbar.maximum())
 
     def update_status(self, message):
         self.status_label.setText(message)

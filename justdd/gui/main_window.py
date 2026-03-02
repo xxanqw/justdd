@@ -175,11 +175,19 @@ class JustDDApp(QMainWindow):
         self.back_button.setFixedWidth(80)
 
         self.continue_button = QPushButton("Continue")
+        self.continue_button.setObjectName("ContinueButton")
+        self.continue_button.clicked.connect(self.go_forward)
+        self.continue_button.setMinimumHeight(35)
+        self.continue_button.setFixedWidth(100)
         self.continue_button.clicked.connect(self.go_forward)
         self.continue_button.setMinimumHeight(35)
         self.continue_button.setFixedWidth(100)
 
         self.flash_button = QPushButton("Flash!")
+        self.flash_button.setObjectName("FlashButton")
+        self.flash_button.clicked.connect(self.start_flash)
+        self.flash_button.setMinimumHeight(35)
+        self.flash_button.setFixedWidth(100)
         self.flash_button.clicked.connect(self.start_flash)
         self.flash_button.setMinimumHeight(35)
         self.flash_button.setFixedWidth(100)
@@ -311,9 +319,11 @@ class JustDDApp(QMainWindow):
             self.flash_worker.progress.connect(self.flash_page.update_progress)
             self.flash_worker.status_update.connect(self.flash_page.update_status)
             self.flash_worker.log_message.connect(self.log_message_safe)
+            if hasattr(self.flash_page, 'update_log'):
+                self.flash_worker.log_message.connect(self.flash_page.update_log)
             self.flash_worker.finished.connect(self.on_flash_finished)
             self.flash_worker.start()
-
+        
     def cancel_flash(self):
         if self.flash_worker:
             reply = QMessageBox.warning(
